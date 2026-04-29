@@ -1,0 +1,940 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+   <meta charset="UTF-8">
+   <meta name="viewport" content="width=device-width,initial-scale=1.0">
+   <title>Railway Report Final Clean</title>
+
+   <script src="https://cdn.jsdelivr.net/npm/exceljs/dist/exceljs.min.js"></script>
+   <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+
+   <style>
+      body {
+         font-family: Arial;
+         background: #0f172a;
+         color: #e2e8f0;
+         padding: 24px;
+      }
+
+      .card {
+         max-width: 1000px;
+         margin: auto;
+         background: #1e293b;
+         padding: 20px;
+         border-radius: 18px;
+      }
+
+      button,
+      input {
+         padding: 10px 14px;
+         border: none;
+         border-radius: 10px;
+         margin: 6px;
+      }
+
+      button {
+         background: #38bdf8;
+         font-weight: bold;
+         cursor: pointer;
+      }
+
+      .log {
+         background: #020617;
+         padding: 12px;
+         border-radius: 12px;
+         min-height: 180px;
+         white-space: pre-wrap;
+         max-height: 400px;
+         overflow-y: auto;
+      }
+   </style>
+</head>
+
+<body>
+
+   <div class="card">
+      <h1>Railway Report Final Clean</h1>
+
+      <input type="file" id="fileInput" accept=".xlsx,.xls"><br>
+      <input type="text" id="trainNo" placeholder="Optional Train No">
+      <input type="text" id="trainName" placeholder="Optional Train Name"><br>
+
+      <button onclick="runTool()">Generate Final Excel</button>
+
+      <div class="log" id="log">System Ready.</div>
+   </div>
+
+   <script>
+
+      function log(t) {
+         document.getElementById("log").textContent += "\n" + t;
+      }
+
+      function fill(cell, argb) {
+         cell.fill = {
+            type: "pattern",
+            pattern: "solid",
+            fgColor: { argb: argb }
+         };
+      }
+
+      async function runTool() {
+
+         const file = document.getElementById("fileInput").files[0];
+         if (!file) { alert("Upload file first"); return; }
+
+         const userTrainNo = document.getElementById("trainNo").value.trim();
+         const userTrainName = document.getElementById("trainName").value.trim();
+
+         document.getElementById("log").textContent = "Processing...";
+
+         const buf = await file.arrayBuffer();
+
+         const raw = XLSX.read(buf, { type: "array" });
+         const src = XLSX.utils.sheet_to_json(
+            raw.Sheets[raw.SheetNames[0]],
+            { header: 1, defval: "" }
+         );
+
+         const headers = src[0];
+         const cleanHeaders = headers.map(h =>
+            String(h).replace(/\s+/g, " ").trim().toUpperCase()
+         );
+
+         const wb = new ExcelJS.Workbook();
+
+         const dirCol = headers.indexOf("Direction");
+         const direction = String(src[1]?.[dirCol] || "N").toUpperCase();
+
+         const main = wb.addWorksheet(
+            direction === "R" ?
+               "Reverse Main Sheet" :
+               "Nominal Main Sheet"
+         );
+
+         const obs = wb.addWorksheet(
+            direction === "R" ?
+               "Reverse Observation Sheet" :
+               "Nominal Observation Sheet"
+         );
+
+         /* ===================================================
+            MAIN SHEET
+         =================================================== */
+
+         src.forEach(r => main.addRow(r));
+
+         main.getRow(1).eachCell({ includeEmpty: true }, cell => {
+            cell.font = { bold: true, color: { argb: "000000" } };
+            fill(cell, "00B0F0");
+         });
+
+         main.views = [{ state: "frozen", ySplit: 1 }];
+
+         main.autoFilter = {
+            from: { row: 1, column: 1 },
+            to: { row: 1, column: headers.length }
+         };
+
+         main.eachRow({ includeEmpty: true }, row => {
+            row.eachCell({ includeEmpty: true }, cell => {
+               cell.alignment = {
+                  horizontal: "center",
+                  vertical: "middle",
+                  wrapText: true
+               };
+            });
+         });
+
+         main.columns.forEach(col => {
+            let m = 10;
+            col.eachCell({ includeEmpty: true }, c => {
+               const v = c.value ? c.value.toString() : "";
+               if (v.length > m) m = v.length + 2;
+            });
+            col.width = m;
+         });
+
+         /* ===================================================
+            COMMON DATA
+         =================================================== */
+
+         const firstData = src[1];
+
+         const rawDate = String(firstData[headers.indexOf("Date")] || "");
+         const locoId = String(firstData[headers.indexOf("LocoID")] || "");
+         const dir = String(firstData[headers.indexOf("Direction")] || "");
+
+         const formattedDate = rawDate.split("-").reverse().join("-");
+
+         const stnCol = headers.indexOf("StationCode");
+         const tagCol = headers.indexOf("TagID");
+
+         let firstCode = String(src[1][stnCol] || "").trim();
+         let firstTag = String(src[1][tagCol] || "").trim();
+
+         let lastCode = "";
+
+         for (let i = src.length - 1; i >= 1; i--) {
+            if (String(src[i][stnCol] || "").trim() !== "") {
+               lastCode = String(src[i][stnCol]).trim();
+               break;
+            }
+         }
+
+         if (firstCode === "BJW" && firstTag === "230") {
+            firstCode = "CYI";
+         }
+
+         const sectionName = `${firstCode} - ${lastCode}`;
+
+         /* ===================================================
+            OBS HEADER
+         =================================================== */
+
+         const h = obs.getRow(2);
+
+         h.getCell(2).value = "Sr No";
+         h.getCell(3).value = "Date";
+         h.getCell(4).value = "Train No";
+         h.getCell(5).value = "Direction";
+         h.getCell(6).value = "Loco No/ Loco Type";
+         h.getCell(7).value = "Train details";
+         h.getCell(8).value = "Section";
+         h.getCell(9).value = "LTCAS Failure/STCAS Failure/RFID/Unidentified";
+         h.getCell(10).value = "Failure type (PARAMETER)";
+         h.getCell(11).value = "Failure Time";
+         h.getCell(12).value = "Failure Absolute Location";
+         h.getCell(13).value = "Failure Description";
+         h.getCell(14).value = "Failure Analysis";
+         h.getCell(15).value = "Action Taken";
+
+         h.eachCell(cell => {
+            cell.font = { bold: true, color: { argb: "000000" }, size: 12 };
+            fill(cell, "D9D9D9");
+            cell.alignment = {
+               horizontal: "center",
+               vertical: "middle",
+               wrapText: true
+            };
+         });
+
+         for (let r = 2; r <= 3; r++) {
+            obs.getRow(r).eachCell({ includeEmpty: true }, cell => {
+               cell.border = {
+                  top: { style: "thin" },
+                  left: { style: "thin" },
+                  right: { style: "thin" },
+                  bottom: { style: "thin" }
+               };
+            });
+         }
+
+         // Set row height for better visibility
+         obs.getRow(2).height = 35;
+
+         /* ===================================================
+            HELPERS
+         =================================================== */
+
+         function idx(name) {
+            const target = String(name).replace(/\s+/g, " ").trim().toUpperCase();
+            const i = cleanHeaders.indexOf(target);
+            return i === -1 ? -1 : i + 1;
+         }
+
+         const cTime = idx("Time");
+         const cAbs = idx("LocoAbsLocation");
+         const cDir = idx("Direction");
+         const cMode = idx("Mode");
+         const cTag = idx("TagLinkInfo");
+         const cStn = idx("StationCode");
+         const cBrake = idx("BrakeStatus");
+         const cEmergency = idx("EmergencyStatus");
+         const cSos = idx("LocoSpecificSOSSentByStn");
+
+         function val(row, col) {
+            return String(obs.getRow(row).getCell(col).value || "").trim();
+         }
+
+         /* ===================================================
+            STYLE OBS ROW FUNCTION
+         =================================================== */
+
+         function styleObsRow(row) {
+            row.eachCell({ includeEmpty: true }, c => {
+               c.alignment = {
+                  horizontal: "center",
+                  vertical: "middle",
+                  wrapText: true
+               };
+               c.border = {
+                  top: { style: "thin" },
+                  left: { style: "thin" },
+                  right: { style: "thin" },
+                  bottom: { style: "thin" }
+               };
+            });
+
+            row.getCell(13).alignment = {
+               horizontal: "left",
+               vertical: "top",
+               wrapText: true
+            };
+         }
+
+         /* ===================================================
+            LOAD RAW DATA FOR DETECTION (TEMP SECTION)
+         =================================================== */
+
+         let tempRowOffset = 7;
+         src.forEach((r, i) => {
+            obs.getRow(tempRowOffset + i).values = r;
+         });
+
+         let obsWriteRow = 3;
+         let srNo = 1;
+         let eventFound = false;
+
+         /* ===================================================
+            MODE DEGRADATION ENGINE
+         =================================================== */
+
+         function writeModeEvent(packet) {
+
+            if (packet.length < 2) return;
+
+            eventFound = true;
+
+            // Build unique mode sequence (remove consecutive duplicates)
+            let uniqueModes = [packet[0].mode];
+            for (let i = 1; i < packet.length; i++) {
+               if (packet[i].mode !== uniqueModes[uniqueModes.length - 1]) {
+                  uniqueModes.push(packet[i].mode);
+               }
+            }
+
+            const seq = uniqueModes.join(' - ');
+
+            // Station range - get first and last station
+            let firstStn = packet[0].station;
+            let lastStn = packet[packet.length - 1].station;
+
+            let stationText = firstStn;
+            if (firstStn !== lastStn) {
+               stationText = firstStn + ' - ' + lastStn;
+            }
+
+            // Time range
+            const failStartTime = packet[0].time;
+            const failEndTime = packet[packet.length - 1].time;
+
+            const failStartAbs = packet[0].abs;
+            const failEndAbs = packet[packet.length - 1].abs;
+
+            // Build failure description - only unique mode transitions
+            let desc = `MODE DEGRADATION (${stationText}) (${seq})\n`;
+
+            let transitionNum = 1;
+            for (let i = 1; i < packet.length; i++) {
+               let prev = packet[i - 1];
+               let curr = packet[i];
+
+               // Only add if mode changed
+               if (prev.mode !== curr.mode) {
+                  // Find station at this transition
+                  let transitionStation = curr.station;
+                  desc += `${transitionNum}. ${prev.mode} - ${curr.mode} at ${curr.time} on ${curr.abs}`;
+                  if (transitionNum < uniqueModes.length - 1) desc += "\n";
+                  transitionNum++;
+               }
+            }
+
+            // Write to observation sheet
+            let row = obs.getRow(obsWriteRow);
+
+            row.getCell(2).value = srNo;
+            row.getCell(3).value = formattedDate;
+            row.getCell(4).value = userTrainNo || "";
+            row.getCell(5).value = dir;
+            row.getCell(6).value = locoId + " / WAP-7";
+            row.getCell(7).value = "22 LHB-Coaches";
+            row.getCell(8).value = sectionName;
+            row.getCell(9).value = "UNIDENTIFIED";
+            row.getCell(10).value = `MODE DEGRADATION (${stationText})`;
+            row.getCell(11).value = `${failStartTime} - ${failEndTime}`;
+            row.getCell(12).value = `${failStartAbs} - ${failEndAbs}`;
+            row.getCell(13).value = desc;
+            row.getCell(14).value = "UNDER ANALYSIS";
+            row.getCell(15).value = "UNDER ANALYSIS";
+
+            styleObsRow(row);
+
+            log(`✓ MODE EVENT at Row ${obsWriteRow}: ${stationText} (${seq})`);
+
+            obsWriteRow++;
+            srNo++;
+         }
+
+         /* ===================================================
+            BOTH TAGS MISS ENGINE
+         =================================================== */
+
+         function writeTagsEvent(startRow, endRow) {
+
+            eventFound = true;
+
+            let row = obs.getRow(obsWriteRow);
+
+            const st1 = val(startRow, cStn);
+            const st2 = val(endRow, cStn);
+
+            let stationText = st1;
+            if (st1 !== st2) stationText = st1 + " - " + st2;
+
+            const timeStart = val(startRow, cTime);
+            const timeEnd = val(endRow, cTime);
+
+            const absStart = val(startRow, cAbs);
+            const absEnd = val(endRow, cAbs);
+
+            const packetCount = endRow - startRow + 1;
+
+            let desc = `BOTH TAGS MISS (${stationText})\n`;
+            desc += `Occurred continuously for ${packetCount} packets\n`;
+            desc += `From ${timeStart} to ${timeEnd}\n`;
+            desc += `Location ${absStart} to ${absEnd}`;
+
+            row.getCell(2).value = srNo;
+            row.getCell(3).value = formattedDate;
+            row.getCell(4).value = userTrainNo || "";
+            row.getCell(5).value = dir;
+            row.getCell(6).value = locoId + " / WAP-7";
+            row.getCell(7).value = "22 LHB-Coaches";
+            row.getCell(8).value = sectionName;
+            row.getCell(9).value = "UNIDENTIFIED";
+            row.getCell(10).value = `BOTH TAGS MISS (${stationText})`;
+            row.getCell(11).value = `${timeStart} - ${timeEnd}`;
+            row.getCell(12).value = `${absStart} - ${absEnd}`;
+            row.getCell(13).value = desc;
+            row.getCell(14).value = "UNDER ANALYSIS";
+            row.getCell(15).value = "UNDER ANALYSIS";
+
+            styleObsRow(row);
+
+            log(`✓ TAGS EVENT at Row ${obsWriteRow}: ${stationText} (${packetCount} packets)`);
+
+            obsWriteRow++;
+            srNo++;
+         }
+
+         /* ===================================================
+            BRAKE STATUS EVENT ENGINE
+         =================================================== */
+
+         function writeBrakeEvent(startRow, endRow, brakeType) {
+
+            eventFound = true;
+
+            let row = obs.getRow(obsWriteRow);
+
+            const st1 = val(startRow, cStn);
+            const st2 = val(endRow, cStn);
+
+            let stationText = st1;
+            if (st1 !== st2) stationText = st1 + " - " + st2;
+
+            const timeStart = val(startRow, cTime);
+            const timeEnd = val(endRow, cTime);
+
+            const absStart = val(startRow, cAbs);
+            const absEnd = val(endRow, cAbs);
+
+            // Display brake type name
+            let brakeDisplayName = brakeType === "EB" ? "EB" : "FSB";
+
+            let desc = `Brake (${brakeDisplayName}) applied at ${timeStart} - ${timeEnd} at location ${absStart} at (${stationText})`;
+
+            row.getCell(2).value = srNo;
+            row.getCell(3).value = formattedDate;
+            row.getCell(4).value = userTrainNo || "";
+            row.getCell(5).value = dir;
+            row.getCell(6).value = locoId + " / WAP-7";
+            row.getCell(7).value = "22 LHB-Coaches";
+            row.getCell(8).value = sectionName;
+            row.getCell(9).value = "UNIDENTIFIED";
+            row.getCell(10).value = `Brake (${brakeDisplayName})`;
+            row.getCell(11).value = `${timeStart} - ${timeEnd}`;
+            row.getCell(12).value = `${absStart} - ${absEnd}`;
+            row.getCell(13).value = desc;
+            row.getCell(14).value = "UNDER ANALYSIS";
+            row.getCell(15).value = "UNDER ANALYSIS";
+
+            styleObsRow(row);
+
+            log(`✓ BRAKE EVENT at Row ${obsWriteRow}: ${brakeDisplayName} at ${stationText}`);
+
+            obsWriteRow++;
+            srNo++;
+         }
+
+         /* ===================================================
+            EMERGENCY STATUS EVENT ENGINE
+         =================================================== */
+
+         function writeEmergencyEvent(startRow, endRow, emergencyType) {
+
+            eventFound = true;
+
+            let row = obs.getRow(obsWriteRow);
+
+            const stationCode = val(startRow, cStn);
+            const timeOccurred = val(startRow, cTime);
+            const locationOccurred = val(startRow, cAbs);
+
+            let desc = `Emergency Status (${emergencyType}) at (${stationCode}) was observed from ${val(startRow, cTime)} to ${val(endRow, cTime)} at Location ${locationOccurred}`;
+
+            row.getCell(2).value = srNo;
+            row.getCell(3).value = formattedDate;
+            row.getCell(4).value = userTrainNo || "";
+            row.getCell(5).value = dir;
+            row.getCell(6).value = locoId + " / WAP-7";
+            row.getCell(7).value = "22 LHB-Coaches";
+            row.getCell(8).value = sectionName;
+            row.getCell(9).value = "UNIDENTIFIED";
+            row.getCell(10).value = `Emergency Status (${emergencyType})`;
+            row.getCell(11).value = `${val(startRow, cTime)} - ${val(endRow, cTime)}`;
+            row.getCell(12).value =
+               val(startRow, cAbs) === val(endRow, cAbs)
+                  ? val(startRow, cAbs)
+                  : `${val(startRow, cAbs)} - ${val(endRow, cAbs)}`;
+            row.getCell(13).value = desc;
+            row.getCell(14).value = "UNDER ANALYSIS";
+            row.getCell(15).value = "UNDER ANALYSIS";
+
+            styleObsRow(row);
+
+            log(`✓ EMERGENCY EVENT at Row ${obsWriteRow}: ${emergencyType} at ${stationCode}`);
+
+            obsWriteRow++;
+            srNo++;
+         }
+
+         /* ===================================================
+            SOS EVENT ENGINE
+         =================================================== */
+
+         function writeSosEvent(startRow, endRow, sosType) {
+
+            eventFound = true;
+
+            let row = obs.getRow(obsWriteRow);
+
+            const stationCode = val(startRow, cStn);
+            const timeOccurred = val(startRow, cTime);
+            const locationOccurred = val(startRow, cAbs);
+
+            let desc = `SOS (${sosType}) at (${stationCode}) was observed from ${val(startRow, cTime)} to ${val(endRow, cTime)} at Location ${locationOccurred}`;
+
+            row.getCell(2).value = srNo;
+            row.getCell(3).value = formattedDate;
+            row.getCell(4).value = userTrainNo || "";
+            row.getCell(5).value = dir;
+            row.getCell(6).value = locoId + " / WAP-7";
+            row.getCell(7).value = "22 LHB-Coaches";
+            row.getCell(8).value = sectionName;
+            row.getCell(9).value = "UNIDENTIFIED";
+            row.getCell(10).value = `SOS (${sosType})`;
+            row.getCell(11).value = `${val(startRow, cTime)} - ${val(endRow, cTime)}`;
+            row.getCell(12).value =
+               val(startRow, cAbs) === val(endRow, cAbs)
+                  ? val(startRow, cAbs)
+                  : `${val(startRow, cAbs)} - ${val(endRow, cAbs)}`;
+            row.getCell(13).value = desc;
+            row.getCell(14).value = "UNDER ANALYSIS";
+            row.getCell(15).value = "UNDER ANALYSIS";
+
+            styleObsRow(row);
+
+            log(`✓ SOS EVENT at Row ${obsWriteRow}: ${sosType} at ${stationCode}`);
+
+            obsWriteRow++;
+            srNo++;
+         }
+
+         /* ===================================================
+            MAIN MODE DETECTION ENGINE
+         ========================================================= */
+
+         for (let r = tempRowOffset + 1; r <= tempRowOffset + src.length - 1; r++) {
+
+            let prevMode = val(r - 1, cMode).toUpperCase();
+            let nowMode = val(r, cMode).toUpperCase();
+
+            if (prevMode === 'FS' && nowMode !== 'FS' && nowMode !== '') {
+
+               let stnNow = val(r, cStn).toUpperCase();
+
+               // Ignore ADI StandBy / Isolation
+               if (
+                  stnNow === 'ADI' &&
+                  (nowMode === 'STANDBY' || nowMode === 'ISOLATION')
+               ) {
+                  log(`Ignored ADI standby packet at row ${r}`);
+                  continue;
+               }
+
+               // Start building mode packet
+               let packet = [];
+
+               packet.push({
+                  mode: prevMode,
+                  time: val(r - 1, cTime),
+                  abs: val(r - 1, cAbs),
+                  station: val(r - 1, cStn)
+               });
+
+               packet.push({
+                  mode: nowMode,
+                  time: val(r, cTime),
+                  abs: val(r, cAbs),
+                  station: val(r, cStn)
+               });
+
+               // Continue building packet until FS is reached
+               let j = r + 1;
+
+               while (j <= tempRowOffset + src.length - 1) {
+
+                  let m = val(j, cMode).toUpperCase();
+
+                  packet.push({
+                     mode: m,
+                     time: val(j, cTime),
+                     abs: val(j, cAbs),
+                     station: val(j, cStn)
+                  });
+
+                  if (m === 'FS') break;
+
+                  j++;
+               }
+
+               // Write mode event
+               writeModeEvent(packet);
+
+               r = j; // Skip processed rows
+            }
+         }
+
+         /* ===================================================
+            BOTH TAGS MISS DETECTION ENGINE
+         ========================================================= */
+
+         for (let r = tempRowOffset + 1; r <= tempRowOffset + src.length - 1; r++) {
+
+            let tag = val(r, cTag).toUpperCase();
+
+            if (tag.includes("BOTH TAGS MISS")) {
+
+               let start = r;
+               let end = r;
+
+               // Find continuous range
+               while (
+                  end + 1 <= tempRowOffset + src.length - 1 &&
+                  val(end + 1, cTag).toUpperCase().includes("BOTH TAGS MISS")
+               ) {
+                  end++;
+               }
+
+               writeTagsEvent(start, end);
+
+               r = end; // Skip processed rows
+            }
+         }
+
+         /* ===================================================
+            BRAKE STATUS DETECTION ENGINE
+         ========================================================= */
+
+         if (cBrake > 0) {
+            for (let r = tempRowOffset + 1; r <= tempRowOffset + src.length - 1; r++) {
+
+               let brakeStatus = val(r, cBrake).toUpperCase();
+
+               if (brakeStatus === "EB" || brakeStatus === "FSB") {
+
+                  let start = r;
+                  let end = r;
+                  let brakeType = brakeStatus;
+
+                  // Find continuous range with same brake status
+                  while (
+                     end + 1 <= tempRowOffset + src.length - 1 &&
+                     val(end + 1, cBrake).toUpperCase() === brakeType
+                  ) {
+                     end++;
+                  }
+
+                  writeBrakeEvent(start, end, brakeType);
+
+                  r = end; // Skip processed rows
+               }
+            }
+         }
+
+         /* ===================================================
+            EMERGENCY STATUS DETECTION ENGINE
+         ========================================================= */
+
+         if (cEmergency != -1) {
+            for (let r = tempRowOffset + 1; r <= tempRowOffset + src.length - 1; r++) {
+
+               let emergencyStatus = val(r, cEmergency).trim();
+
+               if (emergencyStatus && emergencyStatus !== "" && emergencyStatus !== "No Emergency") {
+
+                  let start = r;
+                  let end = r;
+                  let emergencyType = emergencyStatus;
+
+                  // Find continuous range with same emergency status
+                  while (
+                     end + 1 <= tempRowOffset + src.length - 1 &&
+                     val(end + 1, cEmergency).trim() === emergencyType
+                  ) {
+                     end++;
+                  }
+
+                  writeEmergencyEvent(start, end, emergencyType);
+
+                  r = end; // Skip processed rows
+               }
+            }
+         }
+
+         /* ===================================================
+            SOS DETECTION ENGINE
+         ========================================================= */
+
+         if (cSos != -1) {
+            for (let r = tempRowOffset + 1; r <= tempRowOffset + src.length - 1; r++) {
+
+               let sosStatus = val(r, cSos).trim();
+
+               if (sosStatus && sosStatus !== "" && sosStatus !== "No SOS") {
+
+                  let start = r;
+                  let end = r;
+                  let sosType = sosStatus;
+
+                  // Find continuous range with same SOS status
+                  while (
+                     end + 1 <= tempRowOffset + src.length - 1 &&
+                     val(end + 1, cSos).trim() === sosType
+                  ) {
+                     end++;
+                  }
+
+                  writeSosEvent(start, end, sosType);
+
+                  r = end; // Skip processed rows
+               }
+            }
+         }
+
+         /* ===================================================
+            WRITE DEFAULT ROW IF NO EVENTS FOUND
+         =================================================== */
+
+         if (!eventFound) {
+            let row = obs.getRow(obsWriteRow);
+
+            row.getCell(2).value = 1;
+            row.getCell(3).value = formattedDate;
+            row.getCell(4).value = userTrainNo || "";
+            row.getCell(5).value = dir;
+            row.getCell(6).value = locoId + " / WAP-7";
+            row.getCell(7).value = "22 LHB-Coaches";
+            row.getCell(8).value = sectionName;
+
+            for (let c = 9; c <= 15; c++) {
+               row.getCell(c).value = "-";
+            }
+
+            styleObsRow(row);
+
+            log("✓ No events found - Default row written");
+
+            obsWriteRow++;
+            srNo++;
+         }
+
+         /* ===================================================
+            DELETE TEMP RAW SECTION
+         =================================================== */
+
+         for (let r = tempRowOffset; r <= tempRowOffset + src.length - 1; r++) {
+            obs.getRow(r).values = [];
+         }
+
+         /* ===================================================
+            RAW DATA SECTION - 2 ROWS AFTER EVENTS
+         =================================================== */
+
+         let rawStartRow = obsWriteRow + 2;
+
+         log(`\nRaw data starting at Row ${rawStartRow}`);
+
+         src.forEach((r, i) => {
+            obs.getRow(rawStartRow + i).values = r;
+         });
+
+         /* ===================================================
+            RAW HEADER STYLING
+         =================================================== */
+
+         const rawHeader = obs.getRow(rawStartRow);
+
+         rawHeader.eachCell({ includeEmpty: true }, cell => {
+            cell.font = { bold: true, color: { argb: "000000" }, size: 12 };
+            fill(cell, "00B0F0");
+            cell.alignment = {
+               horizontal: "center",
+               vertical: "middle",
+               wrapText: true
+            };
+         });
+
+         // Set row height for better visibility
+         obs.getRow(rawStartRow).height = 35;
+
+         /* ===================================================
+            AUTO FILTER + FREEZE FOR RAW SECTION
+         =================================================== */
+
+         obs.autoFilter = {
+            from: { row: rawStartRow, column: 1 },
+            to: { row: rawStartRow, column: headers.length }
+         };
+
+         obs.views = [
+            {
+               state: "frozen",
+               ySplit: rawStartRow
+            }
+         ];
+
+         /* ===================================================
+            COLUMN WIDTH
+         =================================================== */
+
+         obs.columns.forEach(col => {
+            if (!col.width || col.width < 18) col.width = 22;
+         });
+
+         /* ===================================================
+            RAW DATA HIGHLIGHTING
+         =================================================== */
+
+         for (let r = rawStartRow + 1; r <= obs.rowCount; r++) {
+
+            const row = obs.getRow(r);
+
+            const abs = String(row.getCell(cAbs).value || "");
+            const d = String(row.getCell(cDir).value || "").toUpperCase();
+            const mode = String(row.getCell(cMode).value || "").toUpperCase();
+            const tag = String(row.getCell(cTag).value || "").toUpperCase();
+            const brake = cBrake > 0 ? String(row.getCell(cBrake).value || "").toUpperCase() : "";
+            const emergency = cEmergency > 0 ? String(row.getCell(cEmergency).value || "").toUpperCase() : "";
+            const sos = cSos > 0 ? String(row.getCell(cSos).value || "").trim() : "";
+
+            // Highlighting logic
+            if (abs === "0") {
+               fill(row.getCell(cAbs), "FFFFC0CB");
+               fill(row.getCell(cTime), "FFFF0000");
+            }
+
+            if (d === "U") {
+               fill(row.getCell(cTime), "FFFF0000");
+               if (abs !== "0" && abs !== "") fill(row.getCell(cAbs), "FFFF0000");
+            }
+
+            if (mode && mode !== "FS") {
+               fill(row.getCell(cMode), "FFFFA500");
+               fill(row.getCell(cTime), "FFFF0000");
+               if (abs !== "0") fill(row.getCell(cAbs), "FFFF0000");
+            }
+
+            if (tag.includes("BOTH TAGS MISS")) {
+               fill(row.getCell(cTag), "FF90EE90");
+               fill(row.getCell(cTime), "FFFF0000");
+               if (abs !== "0") fill(row.getCell(cAbs), "FFFF0000");
+            }
+
+            if (emergency && emergency !== "NO EMERGENCY") {
+               fill(row.getCell(cEmergency), "FFFF6347");
+               fill(row.getCell(cTime), "FFFF0000");
+               if (abs !== "0") fill(row.getCell(cAbs), "FFFF0000");
+            }
+
+            if (sos && sos !== "No SOS") {
+               console.log(sos)
+               fill(row.getCell(cSos), "FFFFBA00");
+               fill(row.getCell(cTime), "FFFF0000");
+               if (abs !== "0") fill(row.getCell(cAbs), "FFFF0000");
+            }
+
+            if (brake && brake !== "-") {
+               console.log(brake)
+               fill(row.getCell(cBrake), "B7DEE8");
+               fill(row.getCell(cTime), "FFFF0000");
+               if (abs !== "0") fill(row.getCell(cAbs), "FFFF0000");
+            }
+            // Alignment for all raw data rows
+            row.eachCell({ includeEmpty: true }, cell => {
+               cell.alignment = {
+                  horizontal: "center",
+                  vertical: "middle",
+                  wrapText: true
+               };
+            });
+         }
+
+         /* ===================================================
+            DOWNLOAD
+         =================================================== */
+
+         const out = await wb.xlsx.writeBuffer();
+
+         const blob = new Blob(
+            [out],
+            {
+               type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            }
+         );
+
+         const a = document.createElement("a");
+         a.href = URL.createObjectURL(blob);
+
+         const safeDate = formattedDate.replace(/\//g, "-");
+         const safeLoco = locoId;
+         const safeSection = sectionName.replace(/\s/g, "");
+         const finalTrainName = userTrainName || "TrainName";
+
+         a.download =
+            `${safeDate}_${safeLoco}_${safeSection} -- ${finalTrainName}.xlsx`;
+
+         a.click();
+
+         log(`\n✓ Processing Complete!`);
+         log(`✓ Downloaded: ${a.download}`);
+
+      }
+   </script>
+
+</body>
+
+</html>
