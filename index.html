@@ -4,7 +4,7 @@
 <head>
    <meta charset="UTF-8">
    <meta name="viewport" content="width=device-width,initial-scale=1.0">
-   <title>Railway Report V1</title>
+   <title>Railway Report LM - V2</title>
 
    <script src="https://cdn.jsdelivr.net/npm/exceljs/dist/exceljs.min.js"></script>
    <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
@@ -54,7 +54,7 @@
 <body>
 
    <div class="card">
-      <h1>Railway Report V1 - LM</h1>
+      <h1>Railway Report V2.2 - LM</h1>
 
       <input type="file" id="fileInput" accept=".xlsx,.xls"><br>
       <input type="text" id="trainNo" placeholder="Optional Train No">
@@ -63,7 +63,22 @@
       <button onclick="runTool()">Generate Final Excel</button>
 
       <div class="log" id="log">System Ready.</div>
+      <h3 style="margin-top:20px;">📌 Version History</h3>
+
+      <div class="log" style="min-height:140px; max-height:220px; font-size:14px; line-height:1.6;">
+         V1.0 - Basic LM Report Generation
+
+         V2.0 - Connected LM with Multiple Reports
+            V2.1 - Train Issue Summary - CONNECTED
+            V2.2 - Mode Degradation Overview - CONNECTED
+
+      </div>
    </div>
+
+   <script src="config.js"></script>
+   <script src="gsheet.js"></script>
+   <script src="report-ui.js"></script>
+
 
    <script>
 
@@ -172,23 +187,44 @@
          const tagCol = headers.indexOf("TagID");
 
          let firstCode = String(src[1][stnCol] || "").trim();
-         let firstTag = String(src[1][tagCol] || "").trim();
+         let firstTag = Number(src[1][tagCol] || 0);
 
          let lastCode = "";
+         let lastTag = 0;
 
+         // Find last valid station row
          for (let i = src.length - 1; i >= 1; i--) {
-            if (String(src[i][stnCol] || "").trim() !== "") {
-               lastCode = String(src[i][stnCol]).trim();
+
+            const code = String(src[i][stnCol] || "").trim();
+
+            if (code !== "") {
+               lastCode = code;
+               lastTag = Number(src[i][tagCol] || 0);
                break;
             }
          }
 
-         if (firstCode === "BJW" && firstTag === "230") {
+         // BJW + 230 = CYI
+         if (firstCode === "BJW" && firstTag === 230) {
             firstCode = "CYI";
          }
 
-         const sectionName = `${firstCode} - ${lastCode}`;
+         if (lastCode === "BJW" && lastTag === 230) {
+            lastCode = "CYI";
+         }
 
+         // Final section
+         let sectionName = "";
+
+         if (firstCode === lastCode) {
+            sectionName = firstCode;
+         } else {
+            sectionName = `${firstCode} - ${lastCode}`;
+         }
+
+         console.log("First:", firstCode, firstTag);
+         console.log("Last :", lastCode, lastTag);
+         console.log("Section:", sectionName);
          /* ===================================================
             OBS HEADER
          =================================================== */
@@ -451,10 +487,26 @@
             const absStart = val(startRow, cAbs);
             const absEnd = val(endRow, cAbs);
 
-            // Display brake type name
-            let brakeDisplayName = brakeType === "EB" ? "EB" : "FSB";
+            /* =========================================
+               FIXED BRAKE NAME LOGIC
+            ========================================= */
 
-            let desc = `Brake (${brakeDisplayName}) applied at ${timeStart} - ${timeEnd} at location ${absStart} at (${stationText})`;
+            let brakeDisplayName = String(brakeType).trim().toUpperCase();
+
+            if (brakeDisplayName === "NB") {
+               brakeDisplayName = "NB";
+            }
+            else if (brakeDisplayName === "EB") {
+               brakeDisplayName = "EB";
+            }
+            else if (brakeDisplayName === "FSB") {
+               brakeDisplayName = "FSB";
+            }
+
+            let desc =
+               `Brake (${brakeDisplayName}) applied from ${timeStart} to ${timeEnd}
+at location ${absStart} - ${absEnd}
+at (${stationText})`;
 
             row.getCell(2).value = srNo;
             row.getCell(3).value = formattedDate;
@@ -478,7 +530,6 @@
             obsWriteRow++;
             srNo++;
          }
-
          /* ===================================================
             EMERGENCY STATUS EVENT ENGINE
          =================================================== */
@@ -629,6 +680,220 @@
          }
 
          /* ===================================================
+            BUILDING MODE DETECTION REPORT
+         ========================================================= */
+         function buildModeDegradationReport() {
+
+            let rows = [];
+
+            for (let r = 3; r < obsWriteRow; r++) {
+
+               const row = obs.getRow(r);
+               const failureType = String(row.getCell(10).value || "");
+
+               if (!failureType.includes("MODE DEGRADATION")) continue;
+
+               const date = row.getCell(3).value || "";
+
+               const loco = String(row.getCell(6).value || "")
+                  .split("/")[0]
+                  .trim();
+
+               const dir = row.getCell(5).value || "";
+
+               const abs = String(row.getCell(12).value || "")
+                  .split("-")[0]
+                  .trim();
+
+               const time = String(row.getCell(11).value || "")
+                  .split("-")[0]
+                  .trim();
+
+               const desc = String(row.getCell(13).value || "");
+
+               function doPost(e) {
+
+                  try {
+
+                     const ss = SpreadsheetApp.openById("1Y32WPXj_7GLNvfMEZvnEzjFTFtNccyCVRBLaK-l5pNw");
+
+                     const data = JSON.parse(e.postData.contents);
+
+                     const rows = data.rows || [];
+                     const reportType = data.reportType || "trainIssue";
+
+                     if (rows.length === 0) {
+                        return response({
+                           status: "error",
+                           message: "No rows received"
+                        });
+                     }
+
+                     let sheetName = "";
+
+                     if (reportType === "trainIssue") {
+                        sheetName = "TRAIN ISSUE SUMMARY";
+                        // merge train name only for train issue
+                        if (rows.length > 1) {
+                           sheet.getRange(startRow, 3, rows.length, 1)
+                              .mergeVertically()
+                              .setHorizontalAlignment("center")
+                              .setVerticalAlignment("middle");
+                        }
+                     }
+                     else if (reportType === "modeDegradation") {
+                        sheetName = "MODE DEGRADATION (OVERVIEW)";
+                     }
+                     else {
+                        return response({
+                           status: "error",
+                           message: "Invalid report type"
+                        });
+                     }
+
+                     const sheet = ss.getSheetByName(sheetName);
+
+                     if (!sheet) {
+                        return response({
+                           status: "error",
+                           message: "Sheet not found: " + sheetName
+                        });
+                     }
+
+                     let startRow = sheet.getLastRow() + 1;
+
+                     let nextSr = 1;
+
+                     if (startRow > 2) {
+                        const prev = sheet.getRange(startRow - 1, 4).getValue();
+                        if (prev !== "") {
+                           nextSr = Number(prev) + 1;
+                        }
+                     }
+
+                     // Insert rows
+                     sheet.getRange(startRow, 1, rows.length, rows[0].length).setValues(rows);
+
+                     // Merge Train Name column C
+                     if (rows.length > 1) {
+                        sheet.getRange(startRow, 3, rows.length, 1)
+                           .mergeVertically()
+                           .setHorizontalAlignment("center")
+                           .setVerticalAlignment("middle");
+                     }
+
+                     return response({
+                        status: "success",
+                        reportType: reportType,
+                        sheet: sheetName,
+                        rowsAdded: rows.length
+                     });
+
+                  } catch (err) {
+
+                     return response({
+                        status: "error",
+                        message: err.toString()
+                     });
+                  }
+               }
+
+               const failureText = String(row.getCell(10).value || "").trim();
+
+               const matchStation = failureText.match(/\((.*?)\)/);
+
+               if (matchStation) {
+
+                  const stationPart = matchStation[1].trim();
+
+                  if (stationPart.includes("-")) {
+
+                     const p = stationPart.split("-").map(x => x.trim());
+
+                     stn1 = p[0] || "";
+                     stn2 = p[1] || "";
+
+                  } else {
+
+                     stn1 = stationPart;
+                     stn2 = "";
+                  }
+               }
+
+               // mode switch text
+               let modeSwitch = "";
+               let reason = "";
+
+               const match = desc.match(/\((FS.*?)\)/);
+
+               if (match) {
+
+                  const modes = match[1]
+                     .split("-")
+                     .map(x => x.trim());
+
+                  if (modes.length >= 2) {
+                     modeSwitch =
+                        "Loco switched from " +
+                        modes[0] +
+                        " to " +
+                        modes[1];
+                  }
+
+                  const degraded = modes.find(m => m !== "FS");
+
+                  if (degraded) {
+
+                     let packets = 1;   // current row itself counts
+
+                     for (let x = r + 1; x < obsWriteRow; x++) {
+
+                        const nextDesc = String(
+                           obs.getRow(x).getCell(13).value || ""
+                        ).toUpperCase();
+
+                        if (nextDesc.includes(degraded.toUpperCase())) {
+                           packets++;
+                        } else {
+                           break;
+                        }
+                     }
+
+                     reason =
+                        `Link was __ at that time. ${degraded} mode received for ${packets} packet(s) at the time`;
+                  }
+
+               } else {
+
+                  modeSwitch = "Mode changed";
+                  reason = "Under analysis";
+
+               }
+
+               console.log(stn1, stn2)
+
+               rows.push([
+                  "",          // A blank
+                  "",          // B serial no (Apps Script fills)
+                  date,        // C date
+                  stn1,        // D station 1
+                  stn2,        // E station 2
+                  loco,        // F loco id
+                  dir,         // G direction
+                  "__",        // H link failure
+                  "__",        // I VGW1
+                  "__",        // J VGW2
+                  abs,         // K abs location
+                  time,        // L time of failure
+                  modeSwitch,  // M mode switch
+                  reason       // N reason
+               ]);
+            }
+
+            return rows;
+         }
+
+         /* ===================================================
             BOTH TAGS MISS DETECTION ENGINE
          ========================================================= */
 
@@ -664,7 +929,7 @@
 
                let brakeStatus = val(r, cBrake).toUpperCase();
 
-               if (brakeStatus === "EB" || brakeStatus === "FSB") {
+               if (brakeStatus === "EB" || brakeStatus === "FSB" || brakeStatus === "NB") {
 
                   let start = r;
                   let end = r;
@@ -785,6 +1050,60 @@
          =================================================== */
 
          let rawStartRow = obsWriteRow + 2;
+
+         function buildSheetRows() {
+
+            let rows = [];
+            let tempRows = [];
+
+            for (let r = 3; r < rawStartRow - 1; r++) {
+
+               const row = obs.getRow(r);
+
+               const srCheck = row.getCell(2).value || "";
+               const dateCheck = row.getCell(3).value || "";
+
+               if (srCheck === "" && dateCheck === "") continue;
+
+               tempRows.push(row);
+            }
+
+            for (let i = 0; i < tempRows.length; i++) {
+
+               const row = tempRows[i];
+
+               let rowData = [];
+
+               // A blank
+               rowData.push("");
+
+               // B blank
+               rowData.push("");
+
+               // C Train Name first row only
+               const dirText = dir === "R" ? "UP" : "DN";
+
+               rowData.push(
+                  i === 0
+                     ? `${userTrainName || "UNKNOWN TRAIN"} (${dirText})`
+                     : ""
+               );
+
+
+               // D blank (Apps Script fills serial)
+               rowData.push("");
+
+               // E onwards = Excel columns C to O
+               // (Date to Action)
+               for (let c = 3; c <= 15; c++) {
+                  rowData.push(row.getCell(c).value || "");
+               }
+
+               rows.push(rowData);
+            }
+
+            return rows;
+         }
 
          log(`\nRaw data starting at Row ${rawStartRow}`);
 
@@ -931,6 +1250,24 @@
 
          log(`\n✓ Processing Complete!`);
          log(`✓ Downloaded: ${a.download}`);
+
+         try {
+            const sheetRows = buildSheetRows();
+            const modeDegRows = buildModeDegradationReport();
+
+            log(`\n=== REPORT SUMMARY ===`);
+            log(`Train Issue Summary: ${sheetRows.length} events`);
+            log(`Mode Degradation: ${modeDegRows.length} events`);
+            log(`======================`);
+
+            openReportSelector(sheetRows, modeDegRows);
+
+            console.log("Train Issue Rows:", sheetRows);
+            console.log("Mode Degradation Rows:", modeDegRows);
+         } catch (err) {
+            console.error(err);
+            alert("Popup error: " + err.message);
+         }
 
       }
    </script>
