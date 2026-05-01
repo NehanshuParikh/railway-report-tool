@@ -46,7 +46,7 @@ function openReportSelector(sheetRows, modeDegRows) {
             </div>
  
             <div style="display:flex;gap:12px;margin-bottom:12px;">
-                <button onclick="submitReports()"
+                <button id="updateBtn" onclick="submitReports()"
                     style="
                         flex:1;
                         padding:12px;
@@ -94,6 +94,11 @@ function closePopup() {
 
 
 async function submitReports() {
+
+    const btn = document.getElementById("updateBtn");
+
+    btn.disabled = true;
+    btn.innerHTML = `<span class="loader"></span> Updating... Please Wait`;
 
     const checks = document.querySelectorAll("#reportPopup input:checked");
 
@@ -179,4 +184,7 @@ async function submitReports() {
         alert("❌ Upload Failed\n\n" + message);
         log("❌ Upload Failed");
     }
+
+    btn.disabled = false;
+    btn.innerHTML = "✓ Update";
 }
