@@ -1,10 +1,10 @@
 <!DOCTYPE html>
 <html lang="en">
 
-<head>   
+<head>
    <meta charset="UTF-8">
    <meta name="viewport" content="width=device-width,initial-scale=1.0">
-   <title>Railway Report LM - V2.2</title>
+   <title>Railway Report LM - V2.3</title>
 
    <script src="https://cdn.jsdelivr.net/npm/exceljs/dist/exceljs.min.js"></script>
    <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
@@ -87,7 +87,7 @@
 <body>
 
    <div class="card">
-      <h1>Railway Report V2.2 - LM</h1>
+      <h1>Railway Report V2.3 - LM</h1>
 
       <input type="file" id="fileInput" accept=".xlsx,.xls"><br>
       <input type="text" id="trainNo" placeholder="Optional Train No">
@@ -104,6 +104,7 @@
          V2.0 - Connected LM with Multiple Reports
             V2.1 - Train Issue Summary - CONNECTED
             V2.2 - Mode Degradation Overview - CONNECTED
+            V2.3 - Tag Missing - Overview - CONNECTED
 
       </div>
    </div>
@@ -927,6 +928,180 @@ at (${stationText})`;
          }
 
          /* ===================================================
+   TAG MISSING REPORT BUILDER
+   Extracts "Both Tags Miss" events from observation sheet
+   and formats them for TAG MISSING - OVERVIEW sheet
+=================================================== */
+
+         function buildTagMissingReport() {
+
+            let tagMissRows = [];
+
+            // Iterate through observation sheet rows
+            for (let r = 3; r < obsWriteRow; r++) {
+
+               const row = obs.getRow(r);
+               const failureType = String(row.getCell(10).value || "");
+
+               // Only process BOTH TAGS MISS events
+               if (!failureType.toUpperCase().includes("BOTH TAGS MISS")) {
+                  continue;
+               }
+
+               // Extract data from observation sheet
+               const date = row.getCell(3).value || formattedDate;
+               const locoData = row.getCell(6).value || "";
+               const direction = row.getCell(5).value || "";
+               const absLocation = row.getCell(12).value || "";
+               const description = row.getCell(13).value || "";
+               const trainName = userTrainName || "";
+
+               // Extract station data from description or section
+               // Description format: "BOTH TAGS MISS (station)\nOccurred continuously..."
+               const descText = String(description);
+
+               // Get station code from the section name or description
+               let stationCode = "";
+               let stationName = "";
+
+               // Try to extract from description first
+               const stationMatch = descText.match(/\((.*?)\)/);
+               if (stationMatch) {
+                  stationCode = stationMatch[1].trim();
+               }
+
+               // If no match, try to get from first station in section
+               if (!stationCode) {
+                  const sectionParts = String(sectionName).split("-").map(s => s.trim());
+                  stationCode = sectionParts[0] || "";
+               }
+
+               // Map station code to full station name
+               // You can maintain this mapping or extract from raw data
+               const stationNameMap = {
+                  "BJW": "Bajwa",
+                  "RNO": "Ranoli",
+                  "LC-246": "LC-246",
+                  "VDA": "Vasad",
+                  "ADD": "Adas Road",
+                  "VXD": "Vadod",
+                  "LC-258": "LC-258",
+                  "ANND": "Anand",
+                  "LC-264": "LC-264",
+                  "ANND": "Anand",
+                  "KBRV": "KanjariBoriyavi",
+                  "UTD": "Utarsanda",
+                  "ND": "Nadiad",
+                  "LC-278": "LC-278",
+                  "GTE": "Gothaj",
+                  "RH-463": "RH-463 / LC-286",
+                  "MHD": "Mahmedabad",
+                  "LC-294": "LC-294",
+                  "KANJ": "Kanij",
+                  "BJD": "BarejadiNandej",
+                  "GER": "Geratpur",
+                  "VTA": "Vatva",
+                  "KKEC": "Kankariya Cabin",
+                  "ADI": "Ahmedabad",
+
+                  // Add more mappings as needed
+               };
+
+               stationName = stationNameMap[stationCode] || stationCode;
+
+               // Extract TagID from raw data (first TagID in the range)
+               let tagID = "";
+               let stationID = "";
+
+               // Look for the tag ID in the observation description or raw data
+               // For now, we'll extract from raw data based on the station
+               for (let i = tempRowOffset + 1; i <= tempRowOffset + src.length - 1; i++) {
+
+                  const rawStation = String(val(i, cStn)).trim();
+                  const rawTag = String(val(i, cTag)).trim();
+
+                  if (rawStation.toUpperCase() === stationCode.toUpperCase() &&
+                     rawTag.toUpperCase().includes("BOTH TAGS MISS")) {
+
+                     // Extract TagID from raw data
+                     const tagColIdx = headers.indexOf("TagID");
+                     if (tagColIdx >= 0) {
+                        tagID = String(src[i - tempRowOffset][tagColIdx] || "").trim();
+                     }
+
+                     // Extract StationID if available
+                     const stnIdIdx = headers.indexOf("StationId");
+                     if (stnIdIdx >= 0) {
+                        stationID = String(src[i - tempRowOffset][stnIdIdx] || "").trim();
+                     }
+
+                     break;
+                  }
+               }
+
+               // Extract Loco ID
+               const locoID = String(locoData).split("/")[0].trim();
+
+               // Extract ABS location (take first value if range)
+               let absLoc = "";
+               if (absLocation) {
+                  const absValues = String(absLocation).split("-").map(s => s.trim());
+                  absLoc = absValues[0];
+               }
+
+               // Build the row data
+               const rowData = [];
+
+               // 1. Normal Push to start content from Column B
+               rowData.push('');
+
+               // 2. StationId (from raw data)
+               rowData.push(stationID);
+
+               // 3. StationName (full name)
+               rowData.push(stationName);
+
+               // 4. STN CODE (short code)
+               rowData.push(stationCode);
+
+               // 5. Loco Id (TRAIN NAME)
+               const locoTrainFormat = trainName ? `${locoID} (${trainName})` : locoID;
+               rowData.push(locoTrainFormat);
+
+               // 6. Direction
+               rowData.push(direction);
+
+               // 7. LocoAbsLocation
+               rowData.push(absLoc);
+
+               // 8. TagId (we'll add "Both Tags Missed" prefix in TagLinkInfo)
+               rowData.push('__');
+
+               // 9. TagLinkInfo - "Both Tags Missed" prefix
+               const tagLinkInfo = tagID ? `Both Tags Missed after Tag Id- ${tagID}` : "Both Tags Missed";
+               rowData.push(tagLinkInfo);
+
+               // 10. RecordDate (same as DATE)
+               rowData.push(date);
+
+               // 11. Remark - could be extracted from description or left blank
+               rowData.push('____');
+
+               // 12. Action Taken - leave blank for manual entry
+               rowData.push("____");
+
+               log(rowData)
+
+               tagMissRows.push(rowData);
+
+               log(`✓ TAG MISSING: ${stationCode} (${stationName}) - TagID: ${tagID}`);
+            }
+
+            return tagMissRows;
+         }
+
+
+         /* ===================================================
             BOTH TAGS MISS DETECTION ENGINE
          ========================================================= */
 
@@ -1287,16 +1462,19 @@ at (${stationText})`;
          try {
             const sheetRows = buildSheetRows();
             const modeDegRows = buildModeDegradationReport();
+            const tagMissRows = buildTagMissingReport();
 
             log(`\n=== REPORT SUMMARY ===`);
             log(`Train Issue Summary: ${sheetRows.length} events`);
             log(`Mode Degradation: ${modeDegRows.length} events`);
+            log(`Tag Missing: ${tagMissRows.length} events`);
             log(`======================`);
 
-            openReportSelector(sheetRows, modeDegRows);
+            openReportSelector(sheetRows, modeDegRows, tagMissRows);
 
             console.log("Train Issue Rows:", sheetRows);
             console.log("Mode Degradation Rows:", modeDegRows);
+            console.log("Tag Missing Rows:", tagMissRows);
          } catch (err) {
             console.error(err);
             alert("Popup error: " + err.message);

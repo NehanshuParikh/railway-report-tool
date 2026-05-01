@@ -1,7 +1,12 @@
-function openReportSelector(sheetRows, modeDegRows) {
+function openReportSelector(sheetRows, modeDegRows, tagMissRows) {
 
-    window._sheetRows = sheetRows;
+    window._sheetRows = [];
+    window._modeDegRows = [];
+    window._tagMissRows = [];
+
+    window._sheetRows = sheetRows || [];
     window._modeDegRows = modeDegRows || [];
+    window._tagMissRows = tagMissRows || [];
 
     const old = document.getElementById("reportPopup");
     if (old) old.remove();
@@ -23,7 +28,7 @@ function openReportSelector(sheetRows, modeDegRows) {
     div.innerHTML = `
         <div style="
             background:white;
-            width:450px;
+            width:480px;
             padding:28px;
             border-radius:12px;
             color:black;
@@ -31,20 +36,34 @@ function openReportSelector(sheetRows, modeDegRows) {
             box-shadow:0 0 20px rgba(0,0,0,0.25);
         ">
             <h2 style="margin-top:0;margin-bottom:20px;color:#333;">Select Reports to Update</h2>
- 
+
             <div style="margin-bottom:24px;border:1px solid #ddd;padding:16px;border-radius:8px;background:#f9f9f9;">
-                
+
                 <label style="display:block;margin-bottom:16px;cursor:pointer;">
                     <input type="checkbox" value="trainIssue" checked>
                     <span style="margin-left:10px;font-weight:bold;color:#333;">TRAIN ISSUE SUMMARY</span>
+                    <div style="font-size:12px;color:#666;margin-left:28px;margin-top:4px;">
+                        All events: Mode, Tags, Brake, Emergency, SOS
+                    </div>
                 </label>
- 
-                <label style="display:block;cursor:pointer;">
+
+                <label style="display:block;margin-bottom:16px;cursor:pointer;">
                     <input type="checkbox" value="modeDegradation" checked>
                     <span style="margin-left:10px;font-weight:bold;color:#333;">MODE DEGRADATION (OVERVIEW)</span>
+                    <div style="font-size:12px;color:#666;margin-left:28px;margin-top:4px;">
+                        Detailed mode switch analysis and stations
+                    </div>
+                </label>
+
+                <label style="display:block;cursor:pointer;">
+                    <input type="checkbox" value="tagMissing" checked>
+                    <span style="margin-left:10px;font-weight:bold;color:#333;">TAG MISSING - OVERVIEW</span>
+                    <div style="font-size:12px;color:#666;margin-left:28px;margin-top:4px;">
+                        Both tags miss events by station and location
+                    </div>
                 </label>
             </div>
- 
+
             <div style="display:flex;gap:12px;margin-bottom:12px;">
                 <button id="updateBtn" onclick="submitReports()"
                     style="
@@ -60,7 +79,7 @@ function openReportSelector(sheetRows, modeDegRows) {
                     ">
                     ✓ Update
                 </button>
- 
+
                 <button onclick="closePopup()"
                     style="
                         flex:1;
@@ -76,7 +95,7 @@ function openReportSelector(sheetRows, modeDegRows) {
                     ✕ Cancel
                 </button>
             </div>
- 
+
             <div style="font-size:12px;color:#999;text-align:center;">
                 Checked reports will be uploaded to Google Sheets
             </div>
@@ -98,12 +117,14 @@ async function submitReports() {
     const btn = document.getElementById("updateBtn");
 
     btn.disabled = true;
-    btn.innerHTML = `<span class="loader"></span> Updating... Please Wait`;
+    btn.innerHTML = `<span class="loader"></span> Updating...`;
 
     const checks = document.querySelectorAll("#reportPopup input:checked");
 
     if (checks.length === 0) {
         alert("Please select at least one report to update");
+        btn.disabled = false;
+        btn.innerHTML = "✓ Update";
         return;
     }
 
@@ -122,24 +143,26 @@ async function submitReports() {
 
         log("Uploading " + report.name + "...");
 
-        // Route correct data
+        // Route correct data based on report type
         let rowsToUpload = [];
 
         if (reportKey === "trainIssue") {
             rowsToUpload = window._sheetRows;
         } else if (reportKey === "modeDegradation") {
             rowsToUpload = window._modeDegRows;
+        } else if (reportKey === "tagMissing") {
+            rowsToUpload = window._tagMissRows;
         }
 
         if (!rowsToUpload || rowsToUpload.length === 0) {
 
-            // Special case for Mode Degradation
-            if (reportKey === "modeDegradation") {
+            // For reports with optional data, skip silently
+            if (reportKey === "modeDegradation" || reportKey === "tagMissing") {
                 log("✓ " + report.name + ": No events found, skipped");
-                continue;   // skip silently
+                continue;
             }
 
-            // For other reports
+            // For critical reports, mark as failed
             log("⚠ " + report.name + ": No data found");
             failedReports.push(report.name);
             continue;
@@ -185,6 +208,9 @@ async function submitReports() {
         log("❌ Upload Failed");
     }
 
-    btn.disabled = false;
-    btn.innerHTML = "✓ Update";
+    const btn2 = document.getElementById("updateBtn");
+    if (btn2) {
+        btn2.disabled = false;
+        btn2.innerHTML = "✓ Update";
+    }
 }

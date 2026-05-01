@@ -1,5 +1,5 @@
 const WEBAPP_URL =
-"https://script.google.com/macros/s/AKfycbyMpTCJ9GoqLGNqMQVvYGIEpRSl2tT37LmJgJ4SDRy5EZL1-FxzG-RRoJau-kqQYMxX-w/exec";
+  "https://script.google.com/macros/s/AKfycbyKVmaYCGMLaKLQoHBJh6HC6oLjd8yRFufdwlLBYoiPsr86BeXL8ZBdf4FMoMwVbpEV3Q/exec";
 
 const REPORTS = {
 
@@ -10,6 +10,11 @@ const REPORTS = {
 
   modeDegradation: {
     name: "MODE DEGRADATION (OVERVIEW)",
+    url: WEBAPP_URL
+  },
+  
+  tagMissing: {
+    name: "TAG MISSING - OVERVIEW",
     url: WEBAPP_URL
   }
 

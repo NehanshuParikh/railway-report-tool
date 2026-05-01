@@ -1,29 +1,26 @@
 async function uploadRows(url, rows, reportType) {
+  try {
+    const res = await fetch(url,{
+      method:"POST",
+      mode:"cors",
+      headers:{
+        "Content-Type":"text/plain;charset=utf-8"
+      },
+      body: JSON.stringify({rows, reportType})
+    });
 
-    try {
+    const data = await res.json();
 
-        log("\nUploading " + reportType + "...");
-        log("Rows: " + rows.length);
-
-        await fetch(url, {
-            method: "POST",
-            mode: "no-cors",
-            headers: {
-                "Content-Type": "text/plain;charset=utf-8"
-            },
-            body: JSON.stringify({
-                rows: rows,
-                reportType: reportType
-            })
-        });
-
-        log("✓ Upload Sent Successfully \n");
-        return true;
-
-    } catch (err) {
-
-        console.error(err);
-        log("❌ Upload Failed");
-        return false;
+    if(data.status !== "success"){
+      log("❌ " + data.message);
+      return false;
     }
+
+    log("✓ Uploaded to " + data.sheet);
+    return true;
+
+  } catch(err){
+    log("❌ " + err);
+    return false;
+  }
 }
