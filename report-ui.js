@@ -1,12 +1,14 @@
-function openReportSelector(sheetRows, modeDegRows, tagMissRows) {
+function openReportSelector(sheetRows, modeDegRows, tagMissRows, ebRows) {
 
     window._sheetRows = [];
     window._modeDegRows = [];
     window._tagMissRows = [];
+    window._ebRows = [];
 
     window._sheetRows = sheetRows || [];
     window._modeDegRows = modeDegRows || [];
     window._tagMissRows = tagMissRows || [];
+    window._ebRows = ebRows || [];
 
     const old = document.getElementById("reportPopup");
     if (old) old.remove();
@@ -60,6 +62,14 @@ function openReportSelector(sheetRows, modeDegRows, tagMissRows) {
                     <span style="margin-left:10px;font-weight:bold;color:#333;">TAG MISSING - OVERVIEW</span>
                     <div style="font-size:12px;color:#666;margin-left:28px;margin-top:4px;">
                         Both tags miss events by station and location
+                    </div>
+                </label>
+
+                <label style="display:block;cursor:pointer;margin-top:16px;">
+                    <input type="checkbox" value="ebOverview" checked>
+                    <span style="margin-left:10px;font-weight:bold;color:#333;">EB (OVERVIEW)</span>
+                    <div style="font-size:12px;color:#666;margin-left:28px;margin-top:4px;">
+                        Emergency Brake events extracted from LM
                     </div>
                 </label>
             </div>
@@ -152,6 +162,8 @@ async function submitReports() {
             rowsToUpload = window._modeDegRows;
         } else if (reportKey === "tagMissing") {
             rowsToUpload = window._tagMissRows;
+        } else if (reportKey === "ebOverview") {
+            rowsToUpload = window._ebRows;
         }
 
         if (!rowsToUpload || rowsToUpload.length === 0) {

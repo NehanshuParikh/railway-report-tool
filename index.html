@@ -4,7 +4,7 @@
 <head>
    <meta charset="UTF-8">
    <meta name="viewport" content="width=device-width,initial-scale=1.0">
-   <title>Railway Report LM - V2.3</title>
+   <title>Railway Report LM - V2.4</title>
 
    <script src="https://cdn.jsdelivr.net/npm/exceljs/dist/exceljs.min.js"></script>
    <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
@@ -87,7 +87,7 @@
 <body>
 
    <div class="card">
-      <h1>Railway Report V2.3 - LM</h1>
+      <h1>Railway Report V2.4 - LM</h1>
 
       <input type="file" id="fileInput" accept=".xlsx,.xls"><br>
       <input type="text" id="trainNo" placeholder="Optional Train No">
@@ -105,6 +105,7 @@
             V2.1 - Train Issue Summary - CONNECTED
             V2.2 - Mode Degradation Overview - CONNECTED
             V2.3 - Tag Missing - Overview - CONNECTED
+            V2.4 - EB (OVERVIEW) - CONNECTED
 
       </div>
    </div>
@@ -745,93 +746,6 @@ at (${stationText})`;
 
                const desc = String(row.getCell(13).value || "");
 
-               function doPost(e) {
-
-                  try {
-
-                     const ss = SpreadsheetApp.openById("1Y32WPXj_7GLNvfMEZvnEzjFTFtNccyCVRBLaK-l5pNw");
-
-                     const data = JSON.parse(e.postData.contents);
-
-                     const rows = data.rows || [];
-                     const reportType = data.reportType || "trainIssue";
-
-                     if (rows.length === 0) {
-                        return response({
-                           status: "error",
-                           message: "No rows received"
-                        });
-                     }
-
-                     let sheetName = "";
-
-                     if (reportType === "trainIssue") {
-                        sheetName = "TRAIN ISSUE SUMMARY";
-                        // merge train name only for train issue
-                        if (rows.length > 1) {
-                           sheet.getRange(startRow, 3, rows.length, 1)
-                              .mergeVertically()
-                              .setHorizontalAlignment("center")
-                              .setVerticalAlignment("middle");
-                        }
-                     }
-                     else if (reportType === "modeDegradation") {
-                        sheetName = "MODE DEGRADATION (OVERVIEW)";
-                     }
-                     else {
-                        return response({
-                           status: "error",
-                           message: "Invalid report type"
-                        });
-                     }
-
-                     const sheet = ss.getSheetByName(sheetName);
-
-                     if (!sheet) {
-                        return response({
-                           status: "error",
-                           message: "Sheet not found: " + sheetName
-                        });
-                     }
-
-                     let startRow = sheet.getLastRow() + 1;
-
-                     let nextSr = 1;
-
-                     if (startRow > 2) {
-                        const prev = sheet.getRange(startRow - 1, 4).getValue();
-                        if (prev !== "") {
-                           nextSr = Number(prev) + 1;
-                        }
-                     }
-
-                     // Insert rows
-                     sheet.getRange(startRow, 1, rows.length, rows[0].length).setValues(rows);
-
-                     // Merge Train Name column C
-                     if (rows.length > 1) {
-                        sheet.getRange(startRow, 3, rows.length, 1)
-                           .mergeVertically()
-                           .setHorizontalAlignment("center")
-                           .setVerticalAlignment("middle");
-                     }
-
-                     return response({
-                        status: "success",
-                        reportType: reportType,
-                        sheet: sheetName,
-                        rowsAdded: rows.length
-                     });
-
-                  } catch (err) {
-
-                     return response({
-                        status: "error",
-                        message: err.toString()
-                     });
-                  }
-               }
-
                const failureText = String(row.getCell(10).value || "").trim();
 
                const matchStation = failureText.match(/\((.*?)\)/);
@@ -1100,6 +1014,91 @@ at (${stationText})`;
             return tagMissRows;
          }
 
+         /* ===================================================
+            EB - OVERVIEW REPORT BUILDER
+         =================================================== */
+
+
+         const speedCol = headers.indexOf("TrainSpeed");
+         const signalCol = headers.indexOf("CurrentSignal");
+         const aspectCol = headers.indexOf("CurrentSignalAspect");
+
+         function buildEBOverviewReport() {
+
+            let rows = [];
+
+            const speedCol = headers.indexOf("TrainSpeed");
+            const signalCol = headers.indexOf("CurrentSignal");
+            const aspectCol = headers.indexOf("CurrentSignalAspect");
+
+            for (let r = 3; r < obsWriteRow; r++) {
+
+               const row = obs.getRow(r);
+               const failureType = String(row.getCell(10).value || "").toUpperCase();
+
+               if (!failureType.includes("BRAKE (EB)")) continue;
+
+               const date = row.getCell(3).value || formattedDate;
+               const time = String(row.getCell(11).value || "").split("-")[0].trim();
+               const loco = locoId;
+               const dirn = dir;
+
+               let station = "";
+
+               const match = failureType.match(/\((.*?)\)/);
+               if (match) station = match[1];
+
+               // Find matching raw row using time
+               let speed = "__";
+               let signal = "__";
+               let aspect = "__";
+
+               for (let i = 1; i < src.length; i++) {
+
+                  const rawTime = String(src[i][headers.indexOf("Time")] || "").trim();
+
+                  if (rawTime === time) {
+
+                     speed = src[i][speedCol] || "__";
+                     signal = src[i][signalCol] || "__";
+                     aspect = src[i][aspectCol] || "__";
+
+                     break;
+                  }
+               }
+
+               rows.push([
+                  '',
+                  date,
+                  station,
+                  time,
+                  loco,
+                  "__",
+                  "WAP-7",
+                  "COMISSIONED",
+                  dirn,
+                  "EB applied by KAVACH",
+                  "__",
+                  "open",
+                  "__",
+                  "__",
+                  "__",
+                  "__",
+                  "__",
+                  "__",
+                  "__",
+                  speed,
+                  signal,
+                  aspect
+               ]);
+
+               log("✓ EB REPORT: " + station + " at " + time);
+            }
+
+            return rows;
+         }
+
+
 
          /* ===================================================
             BOTH TAGS MISS DETECTION ENGINE
@@ -1127,6 +1126,8 @@ at (${stationText})`;
                r = end; // Skip processed rows
             }
          }
+
+
 
          /* ===================================================
             BRAKE STATUS DETECTION ENGINE
@@ -1257,14 +1258,15 @@ at (${stationText})`;
             RAW DATA SECTION - 2 ROWS AFTER EVENTS
          =================================================== */
 
-         let rawStartRow = obsWriteRow + 2;
+         let rawStartRow = Math.max(obsWriteRow + 2, tempRowOffset + 1);
 
          function buildSheetRows() {
 
             let rows = [];
             let tempRows = [];
 
-            for (let r = 3; r < rawStartRow - 1; r++) {
+            // Only change: use obsWriteRow instead of rawStartRow - 1
+            for (let r = 3; r < obsWriteRow; r++) {
 
                const row = obs.getRow(r);
 
@@ -1296,7 +1298,6 @@ at (${stationText})`;
                      ? `${userTrainName || "UNKNOWN TRAIN"} (${dirText})`
                      : ""
                );
-
 
                // D blank (Apps Script fills serial)
                rowData.push("");
@@ -1463,18 +1464,21 @@ at (${stationText})`;
             const sheetRows = buildSheetRows();
             const modeDegRows = buildModeDegradationReport();
             const tagMissRows = buildTagMissingReport();
+            const ebRows = buildEBOverviewReport();
 
             log(`\n=== REPORT SUMMARY ===`);
             log(`Train Issue Summary: ${sheetRows.length} events`);
             log(`Mode Degradation: ${modeDegRows.length} events`);
             log(`Tag Missing: ${tagMissRows.length} events`);
+            log(`EB Overview: ${ebRows.length} events`);
             log(`======================`);
 
-            openReportSelector(sheetRows, modeDegRows, tagMissRows);
+            openReportSelector(sheetRows, modeDegRows, tagMissRows, ebRows);
 
             console.log("Train Issue Rows:", sheetRows);
             console.log("Mode Degradation Rows:", modeDegRows);
             console.log("Tag Missing Rows:", tagMissRows);
+            console.log("EB Overview Rows:", ebRows);
          } catch (err) {
             console.error(err);
             alert("Popup error: " + err.message);
