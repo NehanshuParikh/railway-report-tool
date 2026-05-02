@@ -1030,6 +1030,7 @@ at (${stationText})`;
             const speedCol = headers.indexOf("TrainSpeed");
             const signalCol = headers.indexOf("CurrentSignal");
             const aspectCol = headers.indexOf("CurrentSignalAspect");
+            const stationNameCol = headers.indexOf("StationName");
 
             for (let r = 3; r < obsWriteRow; r++) {
 
@@ -1052,6 +1053,7 @@ at (${stationText})`;
                let speed = "__";
                let signal = "__";
                let aspect = "__";
+               let stationName = "__";
 
                for (let i = 1; i < src.length; i++) {
 
@@ -1062,6 +1064,7 @@ at (${stationText})`;
                      speed = src[i][speedCol] || "__";
                      signal = src[i][signalCol] || "__";
                      aspect = src[i][aspectCol] || "__";
+                     stationName = src[i][stationNameCol] || "__";
 
                      break;
                   }
@@ -1070,7 +1073,7 @@ at (${stationText})`;
                rows.push([
                   '',
                   date,
-                  station,
+                  stationName,
                   time,
                   loco,
                   "__",
