@@ -1,14 +1,16 @@
-function openReportSelector(sheetRows, modeDegRows, tagMissRows, ebRows) {
+function openReportSelector(sheetRows, modeDegRows, tagMissRows, ebRows, wrRows) {
 
     window._sheetRows = [];
     window._modeDegRows = [];
     window._tagMissRows = [];
     window._ebRows = [];
+    window._wrRows = [];
 
     window._sheetRows = sheetRows || [];
     window._modeDegRows = modeDegRows || [];
     window._tagMissRows = tagMissRows || [];
     window._ebRows = ebRows || [];
+    window._wrRows = wrRows || [];
 
     const old = document.getElementById("reportPopup");
     if (old) old.remove();
@@ -72,6 +74,14 @@ function openReportSelector(sheetRows, modeDegRows, tagMissRows, ebRows) {
                         Emergency Brake events extracted from LM
                     </div>
                 </label>
+
+                <label style="display:block;cursor:pointer;margin-top:16px;">
+                    <input type="checkbox" value="wrFaults" checked>
+                <span style="margin-left:10px;font-weight:bold;color:#333;">WR LOCO FAULTS</span>
+                <div style="font-size:12px;color:#666;margin-left:28px;margin-top:4px;">
+                    Upload to WR Details + Summary
+                </div>
+            </label>
             </div>
 
             <div style="display:flex;gap:12px;margin-bottom:12px;">
@@ -164,6 +174,8 @@ async function submitReports() {
             rowsToUpload = window._tagMissRows;
         } else if (reportKey === "ebOverview") {
             rowsToUpload = window._ebRows;
+        } else if (reportKey === "wrFaults") {
+            rowsToUpload = window._wrRows;
         }
 
         if (!rowsToUpload || rowsToUpload.length === 0) {
@@ -180,11 +192,21 @@ async function submitReports() {
             continue;
         }
 
-        const ok = await uploadRows(
-            report.url,
-            rowsToUpload,
-            reportKey
-        );
+        let ok = false;
+
+        if (reportKey === "wrFaults") {
+
+            ok = await uploadWRFaults(rowsToUpload);
+
+        } else {
+
+            ok = await uploadRows(
+                report.url,
+                rowsToUpload,
+                reportKey
+            );
+
+        }
 
         if (ok) {
             updatedReports.push(report.name);

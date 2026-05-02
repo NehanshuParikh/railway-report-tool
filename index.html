@@ -4,7 +4,7 @@
 <head>
    <meta charset="UTF-8">
    <meta name="viewport" content="width=device-width,initial-scale=1.0">
-   <title>Railway Report LM - V2.4</title>
+   <title>Railway Report LM - V2.5</title>
 
    <script src="https://cdn.jsdelivr.net/npm/exceljs/dist/exceljs.min.js"></script>
    <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
@@ -87,7 +87,7 @@
 <body>
 
    <div class="card">
-      <h1>Railway Report V2.4 - LM</h1>
+      <h1>Railway Report V2.5 - LM</h1>
 
       <input type="file" id="fileInput" accept=".xlsx,.xls"><br>
       <input type="text" id="trainNo" placeholder="Optional Train No">
@@ -106,12 +106,14 @@
             V2.2 - Mode Degradation Overview - CONNECTED
             V2.3 - Tag Missing - Overview - CONNECTED
             V2.4 - EB (OVERVIEW) - CONNECTED
+            V2.5 - WR LOCO FAULTS - CONNECTED
 
       </div>
    </div>
 
    <script src="config.js"></script>
    <script src="gsheet.js"></script>
+   <script src="wr-sheet.js"></script>
    <script src="report-ui.js"></script>
 
 
@@ -842,10 +844,10 @@ at (${stationText})`;
          }
 
          /* ===================================================
-   TAG MISSING REPORT BUILDER
-   Extracts "Both Tags Miss" events from observation sheet
-   and formats them for TAG MISSING - OVERVIEW sheet
-=================================================== */
+         TAG MISSING REPORT BUILDER
+         Extracts "Both Tags Miss" events from observation sheet
+         and formats them for TAG MISSING - OVERVIEW sheet
+         =================================================== */
 
          function buildTagMissingReport() {
 
@@ -1101,7 +1103,55 @@ at (${stationText})`;
             return rows;
          }
 
+         /* ===================================================
+            LOCO FAULT SUMMARY & LOCO FAULT DETAILS - OVERVIEW REPORT BUILDER
+         =================================================== */
 
+         function buildWRFaultRows() {
+
+            let rows = [];
+
+            for (let r = 3; r < obsWriteRow; r++) {
+
+               const row = obs.getRow(r);
+
+               const failure = String(row.getCell(10).value || "").toUpperCase();
+               const desc = String(row.getCell(13).value || "").toUpperCase();
+
+               let type = "";
+
+               if (failure.includes("MODE DEGRADATION")) {
+
+                  if (desc.includes("SR")) type = "SR";
+                  else if (desc.includes("LS")) type = "LS";
+                  else if (desc.includes("TRIP")) type = "TRIP";
+                  else type = "MIGHT BE TIMEGAP\nFS - OS was observed\n once you update here, update the LOCO FAULT SUMMARY as well";
+
+               } else if (failure.includes("BRAKE (EB)")) type = "EB";
+               else if (failure.includes("BRAKE (FSB)")) type = "FSB";
+               else if (failure.includes("BOTH TAGS MISS")) type = "Both Tags Missed";
+               else continue;
+
+               rows.push([
+                  "",
+                  formattedDate,
+                  row.getCell(8).value || "",
+                  locoId,
+                  type,
+                  dir,
+                  "Analysis Pending",
+                  "__",
+                  row.getCell(13).value || "",
+                  "__",
+                  "__",
+                  "__",
+                  formattedDate,
+                  "OPEN"
+               ]);
+            }
+
+            return rows;
+         }
 
          /* ===================================================
             BOTH TAGS MISS DETECTION ENGINE
@@ -1468,20 +1518,23 @@ at (${stationText})`;
             const modeDegRows = buildModeDegradationReport();
             const tagMissRows = buildTagMissingReport();
             const ebRows = buildEBOverviewReport();
+            const wrRows = buildWRFaultRows();
 
             log(`\n=== REPORT SUMMARY ===`);
             log(`Train Issue Summary: ${sheetRows.length} events`);
             log(`Mode Degradation: ${modeDegRows.length} events`);
             log(`Tag Missing: ${tagMissRows.length} events`);
             log(`EB Overview: ${ebRows.length} events`);
+            log(`WR Faults: ${wrRows.length} events`);
             log(`======================`);
 
-            openReportSelector(sheetRows, modeDegRows, tagMissRows, ebRows);
+            openReportSelector(sheetRows, modeDegRows, tagMissRows, ebRows, wrRows);
 
             console.log("Train Issue Rows:", sheetRows);
             console.log("Mode Degradation Rows:", modeDegRows);
             console.log("Tag Missing Rows:", tagMissRows);
             console.log("EB Overview Rows:", ebRows);
+            console.log("WR Faults Rows:", wrRows);
          } catch (err) {
             console.error(err);
             alert("Popup error: " + err.message);
