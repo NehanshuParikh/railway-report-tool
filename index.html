@@ -4,7 +4,7 @@
 <head>
    <meta charset="UTF-8">
    <meta name="viewport" content="width=device-width,initial-scale=1.0">
-   <title>Railway Report LM - V2.5</title>
+   <title>Railway Report LM - V2.5.2</title>
 
    <script src="https://cdn.jsdelivr.net/npm/exceljs/dist/exceljs.min.js"></script>
    <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
@@ -87,7 +87,7 @@
 <body>
 
    <div class="card">
-      <h1>Railway Report V2.5 - LM</h1>
+      <h1>Railway Report V2.5.2 - LM</h1>
 
       <input type="file" id="fileInput" accept=".xlsx,.xls"><br>
       <input type="text" id="trainNo" placeholder="Optional Train No">
@@ -108,6 +108,7 @@
             V2.4 - EB (OVERVIEW) - CONNECTED
             V2.5 - WR LOCO FAULTS - CONNECTED
                V2.5.1 - Added skipped report for no cases found (All 5 reports included)
+               V2.5.2 - WR - Loco Fault : Site name issue fixed & Standarization of the Obsevation table in LM report.
 
       </div>
    </div>
@@ -371,61 +372,63 @@
          let srNo = 1;
          let eventFound = false;
 
+
          /* ===================================================
-            MODE DEGRADATION ENGINE
+            STANDARDIZED EVENT WRITERS
+            Column 10 Format:
+            FAILURE TYPE (STN CODE) (DETAIL)
          =================================================== */
 
+         /* ===================================================
+            1. MODE DEGRADATION WRITER
+         =================================================== */
          function writeModeEvent(packet) {
 
             if (packet.length < 2) return;
 
             eventFound = true;
 
-            // Build unique mode sequence (remove consecutive duplicates)
             let uniqueModes = [packet[0].mode];
+
             for (let i = 1; i < packet.length; i++) {
                if (packet[i].mode !== uniqueModes[uniqueModes.length - 1]) {
                   uniqueModes.push(packet[i].mode);
                }
             }
 
-            const seq = uniqueModes.join(' - ');
+            const seq = uniqueModes.join(" - ");
 
-            // Station range - get first and last station
             let firstStn = packet[0].station;
             let lastStn = packet[packet.length - 1].station;
 
             let stationText = firstStn;
-            if (firstStn !== lastStn) {
-               stationText = firstStn + ' - ' + lastStn;
-            }
+            if (firstStn !== lastStn) stationText = firstStn + " - " + lastStn;
 
-            // Time range
             const failStartTime = packet[0].time;
             const failEndTime = packet[packet.length - 1].time;
 
             const failStartAbs = packet[0].abs;
             const failEndAbs = packet[packet.length - 1].abs;
 
-            // Build failure description - only unique mode transitions
             let desc = `MODE DEGRADATION (${stationText}) (${seq})\n`;
 
-            let transitionNum = 1;
-            for (let i = 1; i < packet.length; i++) {
-               let prev = packet[i - 1];
-               let curr = packet[i];
+            let count = 1;
 
-               // Only add if mode changed
+            for (let i = 1; i < packet.length; i++) {
+
+               const prev = packet[i - 1];
+               const curr = packet[i];
+
                if (prev.mode !== curr.mode) {
-                  // Find station at this transition
-                  let transitionStation = curr.station;
-                  desc += `${transitionNum}. ${prev.mode} - ${curr.mode} at ${curr.time} on ${curr.abs}`;
-                  if (transitionNum < uniqueModes.length - 1) desc += "\n";
-                  transitionNum++;
+
+                  desc += `${count}. ${prev.mode} - ${curr.mode} at ${curr.time} on ${curr.abs}`;
+
+                  if (i < packet.length - 1) desc += "\n";
+
+                  count++;
                }
             }
 
-            // Write to observation sheet
             let row = obs.getRow(obsWriteRow);
 
             row.getCell(2).value = srNo;
@@ -436,7 +439,9 @@
             row.getCell(7).value = "22 LHB-Coaches";
             row.getCell(8).value = sectionName;
             row.getCell(9).value = "UNIDENTIFIED";
-            row.getCell(10).value = `MODE DEGRADATION (${stationText})`;
+
+            row.getCell(10).value = `MODE DEGRADATION (${stationText}) (${seq})`;
+
             row.getCell(11).value = `${failStartTime} - ${failEndTime}`;
             row.getCell(12).value = `${failStartAbs} - ${failEndAbs}`;
             row.getCell(13).value = desc;
@@ -445,16 +450,64 @@
 
             styleObsRow(row);
 
-            log(`✓ MODE EVENT at Row ${obsWriteRow}: ${stationText} (${seq})`);
+            obsWriteRow++;
+            srNo++;
+         }
+
+         /* ===================================================
+            2. BRAKE EVENT WRITER
+         =================================================== */
+         function writeBrakeEvent(startRow, endRow, brakeType) {
+
+            eventFound = true;
+
+            let row = obs.getRow(obsWriteRow);
+
+            const st1 = val(startRow, cStn);
+            const st2 = val(endRow, cStn);
+
+            let stationText = st1;
+            if (st1 !== st2) stationText = st1 + " - " + st2;
+
+            const timeStart = val(startRow, cTime);
+            const timeEnd = val(endRow, cTime);
+
+            const absStart = val(startRow, cAbs);
+            const absEnd = val(endRow, cAbs);
+
+            brakeType = brakeType.toUpperCase().trim();
+
+            let desc =
+               `Brake (${stationText}) (${brakeType})
+Applied from ${timeStart} to ${timeEnd}
+Location ${absStart} - ${absEnd}`;
+
+            row.getCell(2).value = srNo;
+            row.getCell(3).value = formattedDate;
+            row.getCell(4).value = userTrainNo || "";
+            row.getCell(5).value = dir;
+            row.getCell(6).value = locoId + " / WAP-7";
+            row.getCell(7).value = "22 LHB-Coaches";
+            row.getCell(8).value = sectionName;
+            row.getCell(9).value = "UNIDENTIFIED";
+
+            row.getCell(10).value = `Brake (${stationText}) (${brakeType})`;
+
+            row.getCell(11).value = `${timeStart} - ${timeEnd}`;
+            row.getCell(12).value = `${absStart} - ${absEnd}`;
+            row.getCell(13).value = desc;
+            row.getCell(14).value = "UNDER ANALYSIS";
+            row.getCell(15).value = "UNDER ANALYSIS";
+
+            styleObsRow(row);
 
             obsWriteRow++;
             srNo++;
          }
 
          /* ===================================================
-            BOTH TAGS MISS ENGINE
+            3. BOTH TAGS MISS WRITER
          =================================================== */
-
          function writeTagsEvent(startRow, endRow) {
 
             eventFound = true;
@@ -475,76 +528,29 @@
 
             const packetCount = endRow - startRow + 1;
 
-            let desc = `BOTH TAGS MISS (${stationText})\n`;
-            desc += `Occurred continuously for ${packetCount} packets\n`;
-            desc += `From ${timeStart} to ${timeEnd}\n`;
-            desc += `Location ${absStart} to ${absEnd}`;
-
-            row.getCell(2).value = srNo;
-            row.getCell(3).value = formattedDate;
-            row.getCell(4).value = userTrainNo || "";
-            row.getCell(5).value = dir;
-            row.getCell(6).value = locoId + " / WAP-7";
-            row.getCell(7).value = "22 LHB-Coaches";
-            row.getCell(8).value = sectionName;
-            row.getCell(9).value = "UNIDENTIFIED";
-            row.getCell(10).value = `BOTH TAGS MISS (${stationText})`;
-            row.getCell(11).value = `${timeStart} - ${timeEnd}`;
-            row.getCell(12).value = `${absStart} - ${absEnd}`;
-            row.getCell(13).value = desc;
-            row.getCell(14).value = "UNDER ANALYSIS";
-            row.getCell(15).value = "UNDER ANALYSIS";
-
-            styleObsRow(row);
-
-            log(`✓ TAGS EVENT at Row ${obsWriteRow}: ${stationText} (${packetCount} packets)`);
-
-            obsWriteRow++;
-            srNo++;
-         }
-
-         /* ===================================================
-            BRAKE STATUS EVENT ENGINE
-         =================================================== */
-
-         function writeBrakeEvent(startRow, endRow, brakeType) {
-
-            eventFound = true;
-
-            let row = obs.getRow(obsWriteRow);
-
-            const st1 = val(startRow, cStn);
-            const st2 = val(endRow, cStn);
-
-            let stationText = st1;
-            if (st1 !== st2) stationText = st1 + " - " + st2;
-
-            const timeStart = val(startRow, cTime);
-            const timeEnd = val(endRow, cTime);
-
-            const absStart = val(startRow, cAbs);
-            const absEnd = val(endRow, cAbs);
-
             /* =========================================
-               FIXED BRAKE NAME LOGIC
+               GET REAL TAG ID FROM RAW DATA COLUMN
             ========================================= */
+            let tagId = "__";
 
-            let brakeDisplayName = String(brakeType).trim().toUpperCase();
+            if (cTag > 0) {
+               // TagID column index from source file
+               const tagIdCol = idx("TagID");
 
-            if (brakeDisplayName === "NB") {
-               brakeDisplayName = "NB";
-            }
-            else if (brakeDisplayName === "EB") {
-               brakeDisplayName = "EB";
-            }
-            else if (brakeDisplayName === "FSB") {
-               brakeDisplayName = "FSB";
+               if (tagIdCol > 0) {
+                  tagId = val(startRow, tagIdCol);
+
+                  if (!tagId || tagId === "") {
+                     tagId = "__";
+                  }
+               }
             }
 
             let desc =
-               `Brake (${brakeDisplayName}) applied from ${timeStart} to ${timeEnd}
-at location ${absStart} - ${absEnd}
-at (${stationText})`;
+               `BOTH TAGS MISS (${stationText}) (After Tag-${tagId})
+Occurred continuously for ${packetCount} packets
+From ${timeStart} to ${timeEnd}
+Location ${absStart} - ${absEnd}`;
 
             row.getCell(2).value = srNo;
             row.getCell(3).value = formattedDate;
@@ -554,7 +560,10 @@ at (${stationText})`;
             row.getCell(7).value = "22 LHB-Coaches";
             row.getCell(8).value = sectionName;
             row.getCell(9).value = "UNIDENTIFIED";
-            row.getCell(10).value = `Brake (${brakeDisplayName})`;
+
+            row.getCell(10).value =
+               `BOTH TAGS MISS (${stationText}) (After Tag-${tagId})`;
+
             row.getCell(11).value = `${timeStart} - ${timeEnd}`;
             row.getCell(12).value = `${absStart} - ${absEnd}`;
             row.getCell(13).value = desc;
@@ -563,15 +572,13 @@ at (${stationText})`;
 
             styleObsRow(row);
 
-            log(`✓ BRAKE EVENT at Row ${obsWriteRow}: ${brakeDisplayName} at ${stationText}`);
-
             obsWriteRow++;
             srNo++;
          }
-         /* ===================================================
-            EMERGENCY STATUS EVENT ENGINE
-         =================================================== */
 
+         /* ===================================================
+            4. EMERGENCY EVENT WRITER
+         =================================================== */
          function writeEmergencyEvent(startRow, endRow, emergencyType) {
 
             eventFound = true;
@@ -579,10 +586,17 @@ at (${stationText})`;
             let row = obs.getRow(obsWriteRow);
 
             const stationCode = val(startRow, cStn);
-            const timeOccurred = val(startRow, cTime);
-            const locationOccurred = val(startRow, cAbs);
 
-            let desc = `Emergency Status (${emergencyType}) at (${stationCode}) was observed from ${val(startRow, cTime)} to ${val(endRow, cTime)} at Location ${locationOccurred}`;
+            const timeStart = val(startRow, cTime);
+            const timeEnd = val(endRow, cTime);
+
+            const absStart = val(startRow, cAbs);
+            const absEnd = val(endRow, cAbs);
+
+            let desc =
+               `Emergency Status (${stationCode}) (${emergencyType})
+Observed from ${timeStart} to ${timeEnd}
+Location ${absStart} - ${absEnd}`;
 
             row.getCell(2).value = srNo;
             row.getCell(3).value = formattedDate;
@@ -592,28 +606,24 @@ at (${stationText})`;
             row.getCell(7).value = "22 LHB-Coaches";
             row.getCell(8).value = sectionName;
             row.getCell(9).value = "UNIDENTIFIED";
-            row.getCell(10).value = `Emergency Status (${emergencyType})`;
-            row.getCell(11).value = `${val(startRow, cTime)} - ${val(endRow, cTime)}`;
-            row.getCell(12).value =
-               val(startRow, cAbs) === val(endRow, cAbs)
-                  ? val(startRow, cAbs)
-                  : `${val(startRow, cAbs)} - ${val(endRow, cAbs)}`;
+
+            row.getCell(10).value = `Emergency Status (${stationCode}) (${emergencyType})`;
+
+            row.getCell(11).value = `${timeStart} - ${timeEnd}`;
+            row.getCell(12).value = `${absStart} - ${absEnd}`;
             row.getCell(13).value = desc;
             row.getCell(14).value = "UNDER ANALYSIS";
             row.getCell(15).value = "UNDER ANALYSIS";
 
             styleObsRow(row);
 
-            log(`✓ EMERGENCY EVENT at Row ${obsWriteRow}: ${emergencyType} at ${stationCode}`);
-
             obsWriteRow++;
             srNo++;
          }
 
          /* ===================================================
-            SOS EVENT ENGINE
+            5. SOS EVENT WRITER
          =================================================== */
-
          function writeSosEvent(startRow, endRow, sosType) {
 
             eventFound = true;
@@ -621,10 +631,17 @@ at (${stationText})`;
             let row = obs.getRow(obsWriteRow);
 
             const stationCode = val(startRow, cStn);
-            const timeOccurred = val(startRow, cTime);
-            const locationOccurred = val(startRow, cAbs);
 
-            let desc = `SOS (${sosType}) at (${stationCode}) was observed from ${val(startRow, cTime)} to ${val(endRow, cTime)} at Location ${locationOccurred}`;
+            const timeStart = val(startRow, cTime);
+            const timeEnd = val(endRow, cTime);
+
+            const absStart = val(startRow, cAbs);
+            const absEnd = val(endRow, cAbs);
+
+            let desc =
+               `SOS (${stationCode}) (${sosType})
+Observed from ${timeStart} to ${timeEnd}
+Location ${absStart} - ${absEnd}`;
 
             row.getCell(2).value = srNo;
             row.getCell(3).value = formattedDate;
@@ -634,19 +651,16 @@ at (${stationText})`;
             row.getCell(7).value = "22 LHB-Coaches";
             row.getCell(8).value = sectionName;
             row.getCell(9).value = "UNIDENTIFIED";
-            row.getCell(10).value = `SOS (${sosType})`;
-            row.getCell(11).value = `${val(startRow, cTime)} - ${val(endRow, cTime)}`;
-            row.getCell(12).value =
-               val(startRow, cAbs) === val(endRow, cAbs)
-                  ? val(startRow, cAbs)
-                  : `${val(startRow, cAbs)} - ${val(endRow, cAbs)}`;
+
+            row.getCell(10).value = `SOS (${stationCode}) (${sosType})`;
+
+            row.getCell(11).value = `${timeStart} - ${timeEnd}`;
+            row.getCell(12).value = `${absStart} - ${absEnd}`;
             row.getCell(13).value = desc;
             row.getCell(14).value = "UNDER ANALYSIS";
             row.getCell(15).value = "UNDER ANALYSIS";
 
             styleObsRow(row);
-
-            log(`✓ SOS EVENT at Row ${obsWriteRow}: ${sosType} at ${stationCode}`);
 
             obsWriteRow++;
             srNo++;
@@ -1108,6 +1122,46 @@ at (${stationText})`;
             LOCO FAULT SUMMARY & LOCO FAULT DETAILS - OVERVIEW REPORT BUILDER
          =================================================== */
 
+         // Helper Function to extract station name for fault events
+         function getFaultSiteName(row) {
+
+            const failure = String(row.getCell(10).value || "");
+            const desc = String(row.getCell(13).value || "");
+
+            let match;
+
+            // Priority 1 = Description (real station)
+            match = desc.match(/\((.*?)\)/);
+
+            if (match) {
+               let stn = match[1].trim();
+
+               if (stn.includes("-")) {
+                  stn = stn.split("-")[0].trim();
+               }
+
+               return stn;
+            }
+
+            // Priority 2 = Failure type only for mode degradation
+            if (failure.includes("MODE DEGRADATION")) {
+
+               match = failure.match(/\((.*?)\)/);
+
+               if (match) {
+                  let stn = match[1].trim();
+
+                  if (stn.includes("-")) {
+                     stn = stn.split("-")[0].trim();
+                  }
+
+                  return stn;
+               }
+            }
+
+            return "";
+         }
+
          function buildWRFaultRows() {
 
             let rows = [];
@@ -1116,42 +1170,171 @@ at (${stationText})`;
 
                const row = obs.getRow(r);
 
-               const failure = String(row.getCell(10).value || "").toUpperCase();
-               const desc = String(row.getCell(13).value || "").toUpperCase();
+               const failureRaw = String(row.getCell(10).value || "").trim();
+               const failure = failureRaw.toUpperCase();
+
+               const desc = String(row.getCell(13).value || "");
+               const siteName = getFaultSiteName(row);
 
                let type = "";
 
+               /* ===============================
+                  MODE DEGRADATION
+               =============================== */
                if (failure.includes("MODE DEGRADATION")) {
 
-                  if (desc.includes("SR")) type = "SR";
-                  else if (desc.includes("LS")) type = "LS";
-                  else if (desc.includes("TRIP")) type = "TRIP";
-                  else type = "MIGHT BE TIMEGAP\nFS - OS was observed\n once you update here, update the LOCO FAULT SUMMARY as well";
+                  if (desc.toUpperCase().includes("LS")) type = "LS";
+                  else if (desc.toUpperCase().includes("TRIP")) type = "TRIP";
+                  else if (desc.toUpperCase().includes("SR")) type = "SR";
+                  else if (desc.toUpperCase().includes("FAILURE")) type = "FAILURE";
+                  else type = "OS";
+               }
 
-               } else if (failure.includes("BRAKE (EB)")) type = "EB";
-               else if (failure.includes("BRAKE (FSB)")) type = "FSB";
-               else if (failure.includes("BOTH TAGS MISS")) type = "Both Tags Missed";
-               else continue;
+               /* ===============================
+                  BRAKES - FIXED TO DETECT FSB
+               =============================== */
+               else if (failure.includes("BRAKE")) {
 
+                  // Extract brake type from the end: (EB) or (FSB) or (NB)
+                  // Pattern: anything ending with (BRAKES_TYPE)
+                  const match = failure.match(/\(([A-Z]+)\)$/);
+
+                  if (match) {
+                     type = match[1];  // Gets "EB", "FSB", or "NB"
+
+                     // Skip NB - don't include in report
+                     if (type === "NB") {
+                        continue;
+                     }
+                     // Now type is either "EB" or "FSB" - both will be included
+                  } else {
+                     // Not a valid brake event
+                     continue;
+                  }
+               }
+
+               else {
+                  // Not a mode degradation or brake event - skip
+                  continue;
+               }
+
+               // Only reach here if we have a valid event (MODE or EB or FSB)
                rows.push([
-                  "",
-                  formattedDate,
-                  row.getCell(8).value || "",
-                  locoId,
-                  type,
-                  dir,
-                  "Analysis Pending",
-                  "__",
-                  row.getCell(13).value || "",
-                  "__",
-                  "__",
-                  "__",
-                  formattedDate,
-                  "OPEN"
+                  "",                              // A: Blank (S.NO filled by Apps Script)
+                  formattedDate,                   // B: DATE
+                  siteName,                        // C: SITE NAME
+                  locoId,                          // D: LOCO ID
+                  type,                            // E: FAULT TYPE (LS, TRIP, SR, EB, FSB, etc)
+                  dir,                             // F: DIRECTION
+                  "Analysis Pending",              // G: STATUS
+                  "__",                            // H: Blank
+                  row.getCell(13).value || "",     // I: DESCRIPTION
+                  "__",                            // J: Blank
+                  "__",                            // K: Blank
+                  "__",                            // L: Blank
+                  formattedDate,                   // M: DATE RECORDED
+                  "OPEN"                           // N: ACTION STATUS
                ]);
+
+               log(`✓ WR FAULT: ${type} at ${siteName}`);
             }
 
             return rows;
+         }
+
+
+         /* ===================================================
+            BOTH TAGS MISS DETECTION ENGINE
+         ========================================================= */
+
+         for (let r = tempRowOffset + 1; r <= tempRowOffset + src.length - 1; r++) {
+
+            let tag = val(r, cTag).toUpperCase();
+
+            if (tag.includes("BOTH TAGS MISS")) {
+
+               let start = r;
+               let end = r;
+
+               // Find continuous range
+               while (
+                  end + 1 <= tempRowOffset + src.length - 1 &&
+                  val(end + 1, cTag).toUpperCase().includes("BOTH TAGS MISS")
+               ) {
+                  end++;
+               }
+
+               writeTagsEvent(start, end);
+
+               r = end; // Skip processed rows
+            }
+         }
+
+
+
+         /* ===================================================
+            BRAKE STATUS DETECTION ENGINE
+         ========================================================= */
+
+         if (cBrake > 0) {
+            for (let r = tempRowOffset + 1; r <= tempRowOffset + src.length - 1; r++) {
+
+               let brakeStatus = val(r, cBrake).toUpperCase();
+
+               if (brakeStatus === "EB" || brakeStatus === "FSB" || brakeStatus === "NB") {
+
+                  let start = r;
+                  let end = r;
+                  let brakeType = brakeStatus;
+
+                  // Find continuous range with same brake status
+                  while (
+                     end + 1 <= tempRowOffset + src.length - 1 &&
+                     val(end + 1, cBrake).toUpperCase() === brakeType
+                  ) {
+                     end++;
+                  }
+
+                  writeBrakeEvent(start, end, brakeType);
+
+                  r = end; // Skip processed rows
+               }
+            }
+         }
+
+         /* ===================================================
+         EMERGENCY STATUS DETECTION ENGINE
+         ========================================================= */
+
+         if (cEmergency != -1) {
+
+            for (let r = tempRowOffset + 1; r <= tempRowOffset + src.length - 1; r++) {
+
+               let emergencyStatus = val(r, cEmergency).trim();
+
+               if (
+                  emergencyStatus &&
+                  emergencyStatus !== "" &&
+                  emergencyStatus !== "No Emergency"
+               ) {
+
+                  let start = r;
+                  let end = r;
+                  let emergencyType = emergencyStatus;
+
+                  // Find continuous same emergency packets
+                  while (
+                     end + 1 <= tempRowOffset + src.length - 1 &&
+                     val(end + 1, cEmergency).trim() === emergencyType
+                  ) {
+                     end++;
+                  }
+
+                  writeEmergencyEvent(start, end, emergencyType);
+
+                  r = end; // skip processed rows
+               }
+            }
          }
 
          /* ===================================================
