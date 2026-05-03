@@ -150,6 +150,7 @@ async function submitReports() {
 
     let updatedReports = [];
     let failedReports = [];
+    let skippedReports = [];
 
     for (let c of checks) {
 
@@ -181,8 +182,23 @@ async function submitReports() {
         if (!rowsToUpload || rowsToUpload.length === 0) {
 
             // For reports with optional data, skip silently
-            if (reportKey === "modeDegradation" || reportKey === "tagMissing") {
-                log("✓ " + report.name + ": No events found, skipped");
+            if (!rowsToUpload || rowsToUpload.length === 0) {
+
+                // Optional reports → skip
+                if (
+                    reportKey === "modeDegradation" ||
+                    reportKey === "tagMissing" ||
+                    reportKey === "ebOverview" ||
+                    reportKey === "wrFaults"
+                ) {
+                    log("✓ " + report.name + ": No events found, skipped");
+                    skippedReports.push(report.name);
+                    continue;
+                }
+
+                // Required reports only
+                log("⚠ " + report.name + ": No data found");
+                failedReports.push(report.name);
                 continue;
             }
 
@@ -221,22 +237,32 @@ async function submitReports() {
     let message = "LM Generated Successfully.\n\n";
 
     if (updatedReports.length > 0) {
-        message += "✓ Updated:\n";
+        message += "✓ Updated all the events:\n";
         updatedReports.forEach(r => {
             message += "  • " + r + "\n";
         });
     }
 
     if (failedReports.length > 0) {
-        message += "\n❌ Failed:\n";
+        message += "\n❌ Failed to Update:\n";
         failedReports.forEach(r => {
             message += "  • " + r + "\n";
         });
     }
 
-    if (updatedReports.length > 0) {
+    if (skippedReports.length > 0) {
+        message += "\n⚠ Skipped As Now Events Found:\n";
+        skippedReports.forEach(r => {
+            message += "  • " + r + "\n";
+        });
+    }
+
+    if (failedReports.length === 0) {
         alert(message);
-        log("✓ Google Sheets Updated Successfully");
+        log("✓ Process Completed Successfully");
+    } else if (updatedReports.length > 0 || skippedReports.length > 0) {
+        alert(message);
+        log("⚠ Completed With Some Failures");
     } else {
         alert("❌ Upload Failed\n\n" + message);
         log("❌ Upload Failed");
