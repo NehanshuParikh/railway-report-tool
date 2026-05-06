@@ -4,7 +4,7 @@
 <head>
    <meta charset="UTF-8">
    <meta name="viewport" content="width=device-width,initial-scale=1.0">
-   <title>Railway Report LM - V2.5.3</title>
+   <title>Railway Report LM - V3.0</title>
 
    <script src="https://cdn.jsdelivr.net/npm/exceljs/dist/exceljs.min.js"></script>
    <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
@@ -87,7 +87,7 @@
 <body>
 
    <div class="card">
-      <h1>Railway Report V2.5.3 - LM</h1>
+      <h1>Railway Report V3.0 - LM</h1>
 
       <input type="file" id="fileInput" accept=".xlsx,.xls"><br>
       <input type="text" id="trainNo" placeholder="Optional Train No">
@@ -110,6 +110,8 @@
                V2.5.1 - Added skipped report for no cases found (All 5 reports included)
                V2.5.2 - WR - Loco Fault : Site name issue fixed & Standarization of the Obsevation table in LM report.
                V2.5.3 - Fixed Failure Time & Failure Abs Location issue in Observation table and fixed LC Gates station name issue.
+            
+         V3.0 - Correction of the Mode degradation issue (Incorrect detection due to ADI standby/isolation packets)
       </div>
    </div>
 
@@ -712,6 +714,17 @@ Location ${absStart} - ${absEnd}`;
 
                   let m = val(j, cMode).toUpperCase();
 
+                  let stnLoop = val(j, cStn).toUpperCase();
+
+                  // ❌ Skip ADI Standby / Isolation inside packet
+                  if (
+                     stnLoop === 'ADI' &&
+                     (m === 'STANDBY' || m === 'ISOLATION')
+                  ) {
+                     j++;
+                     continue;
+                  }
+
                   packet.push({
                      mode: m,
                      time: val(j, cTime),
@@ -725,6 +738,17 @@ Location ${absStart} - ${absEnd}`;
 
                      let m = val(j, cMode).toUpperCase();
 
+                     let stnLoop = val(j, cStn).toUpperCase();
+
+                     // ❌ Skip ADI standby/isolation here too
+                     if (
+                        stnLoop === 'ADI' &&
+                        (m === 'STANDBY' || m === 'ISOLATION')
+                     ) {
+                        j++;
+                        continue;
+                     }
+
                      if (m !== 'FS') {
                         lastNonFS = {
                            mode: m,
@@ -734,9 +758,6 @@ Location ${absStart} - ${absEnd}`;
                         };
 
                         packet.push(lastNonFS);
-                     } else {
-                        // FS reached → stop but DON'T include FS
-                        break;
                      }
 
                      j++;
@@ -1357,7 +1378,7 @@ Location ${absStart} - ${absEnd}`;
                }
             }
          }
-         
+
          /* ===================================================
             SOS DETECTION ENGINE
          ========================================================= */
