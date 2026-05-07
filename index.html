@@ -4,7 +4,7 @@
 <head>
    <meta charset="UTF-8">
    <meta name="viewport" content="width=device-width,initial-scale=1.0">
-   <title>Railway Report LM - V3.0</title>
+   <title>Railway Report LM - V4.0</title>
 
    <script src="https://cdn.jsdelivr.net/npm/exceljs/dist/exceljs.min.js"></script>
    <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
@@ -87,7 +87,7 @@
 <body>
 
    <div class="card">
-      <h1>Railway Report V3.0 - LM</h1>
+      <h1>Railway Report V4.0 - LM</h1>
 
       <input type="file" id="fileInput" accept=".xlsx,.xls"><br>
       <input type="text" id="trainNo" placeholder="Optional Train No">
@@ -102,16 +102,19 @@
          V1.0 - Basic LM Report Generation
 
          V2.0 - Connected LM with Multiple Reports
-            V2.1 - Train Issue Summary - CONNECTED
-            V2.2 - Mode Degradation Overview - CONNECTED
-            V2.3 - Tag Missing - Overview - CONNECTED
-            V2.4 - EB (OVERVIEW) - CONNECTED
-            V2.5 - WR LOCO FAULTS - CONNECTED
-               V2.5.1 - Added skipped report for no cases found (All 5 reports included)
-               V2.5.2 - WR - Loco Fault : Site name issue fixed & Standarization of the Obsevation table in LM report.
-               V2.5.3 - Fixed Failure Time & Failure Abs Location issue in Observation table and fixed LC Gates station name issue.
-            
+         V2.1 - Train Issue Summary - CONNECTED
+         V2.2 - Mode Degradation Overview - CONNECTED
+         V2.3 - Tag Missing - Overview - CONNECTED
+         V2.4 - EB (OVERVIEW) - CONNECTED
+         V2.5 - WR LOCO FAULTS - CONNECTED
+         V2.5.1 - Added skipped report for no cases found (All 5 reports included)
+         V2.5.2 - WR - Loco Fault : Site name issue fixed & Standarization of the Obsevation table in LM report.
+         V2.5.3 - Fixed Failure Time & Failure Abs Location issue in Observation table and fixed LC Gates station name
+         issue.
+
          V3.0 - Correction of the Mode degradation issue (Incorrect detection due to ADI standby/isolation packets)
+
+         V4.0: Foreign tag detection, time gap detection for mode degradation, improved mode degradation description with mode sequence and time/abs location, added notes for skipped mode degradation events, overall code optimization and better logging.
       </div>
    </div>
 
@@ -182,7 +185,7 @@
          src.forEach(r => main.addRow(r));
 
          main.getRow(1).eachCell({ includeEmpty: true }, cell => {
-            cell.font = { bold: true, color: { argb: "000000" } };
+            cell.font = { bold: true, color: { argb: "FF000000" } };
             fill(cell, "00B0F0");
          });
 
@@ -288,8 +291,8 @@
          h.getCell(15).value = "Action Taken";
 
          h.eachCell(cell => {
-            cell.font = { bold: true, color: { argb: "000000" }, size: 12 };
-            fill(cell, "D9D9D9");
+            cell.font = { bold: true, color: { argb: "FF000000" }, size: 12 };
+            fill(cell, "00B0F0");
             cell.alignment = {
                horizontal: "center",
                vertical: "middle",
@@ -297,7 +300,7 @@
             };
          });
 
-         for (let r = 2; r <= 3; r++) {
+         for (let r = 2; r <= 2; r++) {
             obs.getRow(r).eachCell({ includeEmpty: true }, cell => {
                cell.border = {
                   top: { style: "thin" },
@@ -330,6 +333,7 @@
          const cBrake = idx("BrakeStatus");
          const cEmergency = idx("EmergencyStatus");
          const cSos = idx("LocoSpecificSOSSentByStn");
+         const cSignalOverride = idx("SignalOverride");
 
          function val(row, col) {
             return String(obs.getRow(row).getCell(col).value || "").trim();
@@ -365,7 +369,7 @@
             LOAD RAW DATA FOR DETECTION (TEMP SECTION)
          =================================================== */
 
-         let tempRowOffset = 7;
+         let tempRowOffset = 100;
          src.forEach((r, i) => {
             obs.getRow(tempRowOffset + i).values = r;
          });
@@ -384,7 +388,7 @@
          /* ===================================================
             1. MODE DEGRADATION WRITER
          =================================================== */
-         function writeModeEvent(packet) {
+         function writeModeEvent(packet, skipSheets = false) {
 
             if (packet.length < 2) return;
 
@@ -406,11 +410,29 @@
             let stationText = firstStn;
             if (firstStn !== lastStn) stationText = firstStn + " - " + lastStn;
 
-            const failStartTime = packet[0].time;
-            const failEndTime = packet[packet.length - 1].time;
+            // Find first non-FS mode index
+            let firstNonFSIndex = 1;
+            for (let i = 1; i < packet.length; i++) {
+               if (packet[i].mode !== 'FS') {
+                  firstNonFSIndex = i;
+                  break;
+               }
+            }
 
-            const failStartAbs = packet[0].abs;
-            const failEndAbs = packet[packet.length - 1].abs;
+            // Find last non-FS mode index (from end, going backwards)
+            let lastNonFSIndex = packet.length - 1;
+            for (let i = packet.length - 1; i >= 0; i--) {
+               if (packet[i].mode !== 'FS') {
+                  lastNonFSIndex = i;
+                  break;
+               }
+            }
+
+            const failStartTime = packet[firstNonFSIndex].time;
+            const failEndTime = packet[lastNonFSIndex].time;
+
+            const failStartAbs = packet[firstNonFSIndex].abs;
+            const failEndAbs = packet[lastNonFSIndex].abs;
 
             let desc = `MODE DEGRADATION (${stationText}) (${seq})\n`;
 
@@ -447,7 +469,18 @@
             row.getCell(11).value = `${failStartTime} - ${failEndTime}`;
             row.getCell(12).value = `${failStartAbs} - ${failEndAbs}`;
             row.getCell(13).value = desc;
-            row.getCell(14).value = "UNDER ANALYSIS";
+
+            // Check if this should be skipped from sheets or has time gap
+            if (skipSheets) {
+               row.getCell(14).value = packet[0].signalOverride || "UNDER ANALYSIS";
+               row._skipFromSheets = true;
+            } else if (packet[0].isTimeGap) {
+               row.getCell(14).value = packet[0].signalOverride || "Mode unknown due to time gap - Check loco reg packets";
+               row._isTimeGap = true;
+            } else {
+               row.getCell(14).value = "UNDER ANALYSIS";
+            }
+
             row.getCell(15).value = "UNDER ANALYSIS";
 
             styleObsRow(row);
@@ -669,6 +702,59 @@ Location ${absStart} - ${absEnd}`;
          }
 
          /* ===================================================
+            6. FOREIGN TAG EVENT WRITER
+         =================================================== */
+         function writeForeignTagEvent(startRow, endRow, foreignType) {
+
+            eventFound = true;
+
+            let row = obs.getRow(obsWriteRow);
+
+            const stationCode = val(startRow, cStn);
+
+            const timeStart = val(startRow, cTime);
+            const timeEnd = val(endRow, cTime);
+
+            const absStart = val(startRow, cAbs);
+            const absEnd = val(endRow, cAbs);
+
+            // Get first packet's TagID
+            const tagIdCol = idx("TagID");
+            let firstTagId = "__";
+            if (tagIdCol > 0) {
+               firstTagId = val(startRow, tagIdCol);
+            }
+
+            let desc =
+               `Foreign Tag (${stationCode}) (${foreignType})
+Observed from ${timeStart} to ${timeEnd}
+Location ${absStart} - ${absEnd}
+First Foreign TagID: ${firstTagId}`;
+
+            row.getCell(2).value = srNo;
+            row.getCell(3).value = formattedDate;
+            row.getCell(4).value = userTrainNo || "";
+            row.getCell(5).value = dir;
+            row.getCell(6).value = locoId + " / WAP-7";
+            row.getCell(7).value = "22 LHB-Coaches";
+            row.getCell(8).value = sectionName;
+            row.getCell(9).value = "UNIDENTIFIED";
+
+            row.getCell(10).value = `Foreign Tag (${stationCode}) (${foreignType})`;
+
+            row.getCell(11).value = `${timeStart} - ${timeEnd}`;
+            row.getCell(12).value = `${absStart} - ${absEnd}`;
+            row.getCell(13).value = desc;
+            row.getCell(14).value = `${firstTagId} caused Foreign RFID`;
+            row.getCell(15).value = "UNDER ANALYSIS";
+
+            styleObsRow(row);
+
+            obsWriteRow++;
+            srNo++;
+         }
+
+         /* ===================================================
             MAIN MODE DETECTION ENGINE
          ========================================================= */
 
@@ -690,14 +776,131 @@ Location ${absStart} - ${absEnd}`;
                   continue;
                }
 
+               // Check for direct FS -> OS/ONSIGHT transition
+               if (nowMode === 'OS' || nowMode === 'ONSIGHT') {
+
+                  // Check SignalOverride column
+                  let sigOverride = '';
+                  if (cSignalOverride > 0) {
+                     sigOverride = val(r, cSignalOverride).toUpperCase();
+                  }
+
+                  if (sigOverride === 'SIG_OV_ACTIVE') {
+                     // Write to observation but skip from sheets
+                     let packet = [];
+
+                     packet.push({
+                        mode: 'FS',
+                        time: val(r - 1, cTime),
+                        abs: val(r - 1, cAbs),
+                        station: val(r - 1, cStn),
+                        signalOverride: 'SIG_OV_ACTIVE'
+                     });
+
+                     packet.push({
+                        mode: nowMode,
+                        time: val(r, cTime),
+                        abs: val(r, cAbs),
+                        station: val(r, cStn),
+                        signalOverride: 'SIG_OV_ACTIVE'
+                     });
+
+                     // Continue until FS
+                     let j = r + 1;
+                     while (j <= tempRowOffset + src.length - 1) {
+                        let m = val(j, cMode).toUpperCase();
+                        let stnLoop = val(j, cStn).toUpperCase();
+
+                        if (stnLoop === 'ADI' && (m === 'STANDBY' || m === 'ISOLATION')) {
+                           j++;
+                           continue;
+                        }
+
+                        packet.push({
+                           mode: m,
+                           time: val(j, cTime),
+                           abs: val(j, cAbs),
+                           station: val(j, cStn),
+                           signalOverride: 'SIG_OV_ACTIVE'
+                        });
+
+                        if (m === 'FS') break;
+                        j++;
+                     }
+
+                     writeModeEvent(packet, true); // Skip from sheets
+                     log(`FS-OS with SIG_OV_ACTIVE at row ${r} - skipped from sheets`);
+                     r = j;
+                     continue;
+                  } else {
+                     // Check time gap
+                     let prevTime = val(r - 1, cTime);
+                     let currTime = val(r, cTime);
+
+                     // Parse times (assuming HH:MM:SS format)
+                     let timeDiff = calculateTimeDifference(prevTime, currTime);
+
+                     if (timeDiff > 2) {
+                        // Time gap detected - add note
+                        let packet = [];
+
+                        packet.push({
+                           mode: 'FS',
+                           time: val(r - 1, cTime),
+                           abs: val(r - 1, cAbs),
+                           station: val(r - 1, cStn),
+                           signalOverride: `Mode unknown due to ${timeDiff}s time gap - Check loco reg packets`,
+                           isTimeGap: true
+                        });
+
+                        packet.push({
+                           mode: nowMode,
+                           time: val(r, cTime),
+                           abs: val(r, cAbs),
+                           station: val(r, cStn),
+                           signalOverride: `Mode unknown due to ${timeDiff}s time gap - Check loco reg packets`,
+                           isTimeGap: true
+                        });
+
+                        // Continue until FS
+                        let j = r + 1;
+                        while (j <= tempRowOffset + src.length - 1) {
+                           let m = val(j, cMode).toUpperCase();
+                           let stnLoop = val(j, cStn).toUpperCase();
+
+                           if (stnLoop === 'ADI' && (m === 'STANDBY' || m === 'ISOLATION')) {
+                              j++;
+                              continue;
+                           }
+
+                           packet.push({
+                              mode: m,
+                              time: val(j, cTime),
+                              abs: val(j, cAbs),
+                              station: val(j, cStn),
+                              isTimeGap: true
+                           });
+
+                           if (m === 'FS') break;
+                           j++;
+                        }
+
+                        writeModeEvent(packet, false);
+                        log(`FS-${nowMode} with ${timeDiff}s time gap at row ${r}`);
+                        r = j;
+                        continue;
+                     }
+                  }
+               }
+
                // Start building mode packet
                let packet = [];
 
                packet.push({
-                  mode: nowMode,
-                  time: val(r, cTime),
-                  abs: val(r, cAbs),
-                  station: val(r, cStn)
+                  mode: 'FS',
+                  time: val(r - 1, cTime),
+                  abs: val(r - 1, cAbs),
+                  station: val(r - 1, cStn)
                });
 
                packet.push({
@@ -713,7 +916,6 @@ Location ${absStart} - ${absEnd}`;
                while (j <= tempRowOffset + src.length - 1) {
 
                   let m = val(j, cMode).toUpperCase();
-
                   let stnLoop = val(j, cStn).toUpperCase();
 
                   // ❌ Skip ADI Standby / Isolation inside packet
@@ -732,49 +934,41 @@ Location ${absStart} - ${absEnd}`;
                      station: val(j, cStn)
                   });
 
-                  let lastNonFS = null;
-
-                  while (j <= tempRowOffset + src.length - 1) {
-
-                     let m = val(j, cMode).toUpperCase();
-
-                     let stnLoop = val(j, cStn).toUpperCase();
-
-                     // ❌ Skip ADI standby/isolation here too
-                     if (
-                        stnLoop === 'ADI' &&
-                        (m === 'STANDBY' || m === 'ISOLATION')
-                     ) {
-                        j++;
-                        continue;
-                     }
-
-                     if (m !== 'FS') {
-                        lastNonFS = {
-                           mode: m,
-                           time: val(j, cTime),
-                           abs: val(j, cAbs),
-                           station: val(j, cStn)
-                        };
-
-                        packet.push(lastNonFS);
-                     }
-
-                     j++;
+                  // If back to FS, close packet
+                  if (m === 'FS') {
+                     break;
                   }
 
                   j++;
                }
 
                // Write mode event
-               writeModeEvent(packet);
+               writeModeEvent(packet, false);
 
                r = j; // Skip processed rows
             }
          }
 
          /* ===================================================
-            BUILDING MODE DETECTION REPORT
+            HELPER FUNCTION TO CALCULATE TIME DIFFERENCE
+         =================================================== */
+         function calculateTimeDifference(time1, time2) {
+            try {
+               // Parse HH:MM:SS format
+               const parts1 = time1.split(':').map(Number);
+               const parts2 = time2.split(':').map(Number);
+
+               const seconds1 = parts1[0] * 3600 + parts1[1] * 60 + parts1[2];
+               const seconds2 = parts2[0] * 3600 + parts2[1] * 60 + parts2[2];
+
+               return Math.abs(seconds2 - seconds1);
+            } catch (e) {
+               return 0;
+            }
+         }
+
+         /* ===================================================
+            BUILDING MODE DEGRADATION REPORT
          ========================================================= */
          function buildModeDegradationReport() {
 
@@ -787,13 +981,19 @@ Location ${absStart} - ${absEnd}`;
 
                if (!failureType.includes("MODE DEGRADATION")) continue;
 
+               // Skip rows marked for exclusion from sheets
+               if (row._skipFromSheets) {
+                  log(`Skipped MODE DEGRADATION from sheet (SIG_OV_ACTIVE) at row ${r}`);
+                  continue;
+               }
+
                const date = row.getCell(3).value || "";
 
                const loco = String(row.getCell(6).value || "")
                   .split("/")[0]
                   .trim();
 
-               const dir = row.getCell(5).value || "";
+               const dirVal = row.getCell(5).value || "";
 
                const abs = String(row.getCell(12).value || "")
                   .split("-")[0]
@@ -807,15 +1007,18 @@ Location ${absStart} - ${absEnd}`;
 
                const failureText = String(row.getCell(10).value || "").trim();
 
+               let stn1 = "";
+               let stn2 = "";
+
                const matchStation = failureText.match(/\((.*?)\)/);
 
                if (matchStation) {
 
                   const stationPart = matchStation[1].trim();
 
-                  if (stationPart.includes("-")) {
+                  if (stationPart.includes(" - ")) {
 
-                     const p = stationPart.split("-").map(x => x.trim());
+                     const p = stationPart.split(" - ").map(x => x.trim());
 
                      stn1 = p[0] || "";
                      stn2 = p[1] || "";
@@ -840,11 +1043,16 @@ Location ${absStart} - ${absEnd}`;
                      .map(x => x.trim());
 
                   if (modes.length >= 2) {
-                     modeSwitch =
-                        "Loco switched from " +
-                        modes[0] +
-                        " to " +
-                        modes[1];
+                     // Check if this row has time gap flag
+                     if (row._isTimeGap) {
+                        modeSwitch = "Mode unknown due to time gap - Check loco reg packets";
+                     } else {
+                        modeSwitch =
+                           "Loco switched from " +
+                           modes[0] +
+                           " to " +
+                           modes[1];
+                     }
                   }
 
                   const degraded = modes.find(m => m !== "FS");
@@ -877,8 +1085,6 @@ Location ${absStart} - ${absEnd}`;
 
                }
 
-               console.log(stn1, stn2)
-
                rows.push([
                   "",          // A blank
                   "",          // B serial no (Apps Script fills)
@@ -886,7 +1092,7 @@ Location ${absStart} - ${absEnd}`;
                   stn1,        // D station 1
                   stn2,        // E station 2
                   loco,        // F loco id
-                  dir,         // G direction
+                  dirVal,      // G direction
                   "__",        // H link failure
                   "__",        // I VGW1
                   "__",        // J VGW2
@@ -914,6 +1120,10 @@ Location ${absStart} - ${absEnd}`;
             for (let r = 3; r < obsWriteRow; r++) {
 
                const row = obs.getRow(r);
+
+               // Skip rows marked for exclusion from sheets
+               if (row._skipFromSheets) continue;
+
                const failureType = String(row.getCell(10).value || "");
 
                // Only process BOTH TAGS MISS events
@@ -950,7 +1160,6 @@ Location ${absStart} - ${absEnd}`;
                }
 
                // Map station code to full station name
-               // You can maintain this mapping or extract from raw data
                const stationNameMap = {
                   "BJW": "Bajwa",
                   "RNO": "Ranoli",
@@ -961,7 +1170,6 @@ Location ${absStart} - ${absEnd}`;
                   "LC-258": "LC-258",
                   "ANND": "Anand",
                   "LC-264": "LC-264",
-                  "ANND": "Anand",
                   "KBRV": "KanjariBoriyavi",
                   "UTD": "Utarsanda",
                   "ND": "Nadiad",
@@ -976,8 +1184,6 @@ Location ${absStart} - ${absEnd}`;
                   "VTA": "Vatva",
                   "KKEC": "Kankariya Cabin",
                   "ADI": "Ahmedabad",
-
-                  // Add more mappings as needed
                };
 
                stationName = stationNameMap[stationCode] || stationCode;
@@ -1063,8 +1269,6 @@ Location ${absStart} - ${absEnd}`;
                // 12. Action Taken - leave blank for manual entry
                rowData.push("____");
 
-               log(rowData)
-
                tagMissRows.push(rowData);
 
                log(`✓ TAG MISSING: ${stationCode} (${stationName}) - TagID: ${tagID}`);
@@ -1094,9 +1298,13 @@ Location ${absStart} - ${absEnd}`;
             for (let r = 3; r < obsWriteRow; r++) {
 
                const row = obs.getRow(r);
+
+               // Skip rows marked for exclusion from sheets
+               if (row._skipFromSheets) continue;
+
                const failureType = String(row.getCell(10).value || "").toUpperCase();
 
-               if (!failureType.includes("BRAKE (EB)")) continue;
+               if (!failureType.includes("BRAKE") || !failureType.includes("EB")) continue;
 
                const date = row.getCell(3).value || formattedDate;
                const time = String(row.getCell(11).value || "").split("-")[0].trim();
@@ -1212,6 +1420,12 @@ Location ${absStart} - ${absEnd}`;
 
                const row = obs.getRow(r);
 
+               // Skip rows marked for exclusion from sheets
+               if (row._skipFromSheets) {
+                  log(`Skipped WR FAULT from sheet (SIG_OV_ACTIVE) at row ${r}`);
+                  continue;
+               }
+
                const failureRaw = String(row.getCell(10).value || "").trim();
                const failure = failureRaw.toUpperCase();
 
@@ -1225,7 +1439,10 @@ Location ${absStart} - ${absEnd}`;
                =============================== */
                if (failure.includes("MODE DEGRADATION")) {
 
-                  if (desc.toUpperCase().includes("LS")) type = "LS";
+                  // Check if time gap issue
+                  if (row._isTimeGap) {
+                     type = "Mode unknown due to time gap";
+                  } else if (desc.toUpperCase().includes("LS")) type = "LS";
                   else if (desc.toUpperCase().includes("TRIP")) type = "TRIP";
                   else if (desc.toUpperCase().includes("SR")) type = "SR";
                   else if (desc.toUpperCase().includes("FAILURE")) type = "FAILURE";
@@ -1255,8 +1472,44 @@ Location ${absStart} - ${absEnd}`;
                   }
                }
 
+               /* ===============================
+                  FOREIGN TAG (FOREIGN RFID)
+               =============================== */
+               else if (failure.includes("FOREIGN")) {
+                  type = "Foreign Tag";
+               }
+
+               /* ===============================
+                  SOS EVENTS - SKIP FROM WR LOCO FAULTS
+               =============================== */
+               else if (failure.includes("SOS")) {
+                  // SOS events are NOT included in WR Loco Faults
+                  continue;
+               }
+
+               /* ===============================
+                  BOTH TAGS MISS
+               =============================== */
+               else if (failure.includes("BOTH TAGS MISS")) {
+                  type = "Both Tags Missed";
+               }
+
+               /* ===============================
+                  RF - LOW BAR/FLICKERING
+               =============================== */
+               else if (failure.includes("RF") && (failure.includes("LOW BAR") || failure.includes("FLICKERING"))) {
+                  type = "RF - Low Bar/Flickering";
+               }
+
+               /* ===============================
+                  RF - NILL
+               =============================== */
+               else if (failure.includes("RF") && failure.includes("NILL")) {
+                  type = "RF- Nill";
+               }
+
                else {
-                  // Not a mode degradation or brake event - skip
+                  // Not a recognized fault type - skip
                   continue;
                }
 
@@ -1410,6 +1663,35 @@ Location ${absStart} - ${absEnd}`;
          }
 
          /* ===================================================
+            FOREIGN TAG DETECTION ENGINE
+         ========================================================= */
+
+         for (let r = tempRowOffset + 1; r <= tempRowOffset + src.length - 1; r++) {
+
+            let tagInfo = val(r, cTag).toUpperCase();
+
+            // Check if it contains "FOREIGN" keyword
+            if (tagInfo.includes("FOREIGN")) {
+
+               let start = r;
+               let end = r;
+               let foreignType = val(r, cTag);
+
+               // Find continuous range with same foreign tag status
+               while (
+                  end + 1 <= tempRowOffset + src.length - 1 &&
+                  val(end + 1, cTag).toUpperCase().includes("FOREIGN")
+               ) {
+                  end++;
+               }
+
+               writeForeignTagEvent(start, end, foreignType);
+
+               r = end; // Skip processed rows
+            }
+         }
+
+         /* ===================================================
             WRITE DEFAULT ROW IF NO EVENTS FOUND
          =================================================== */
 
@@ -1445,10 +1727,10 @@ Location ${absStart} - ${absEnd}`;
          }
 
          /* ===================================================
-            RAW DATA SECTION - 2 ROWS AFTER EVENTS
+            RAW DATA SECTION - 1 ROW AFTER EVENTS
          =================================================== */
 
-         let rawStartRow = Math.max(obsWriteRow + 2, tempRowOffset + 1);
+         let rawStartRow = obsWriteRow + 1;
 
          function buildSheetRows() {
 
@@ -1459,6 +1741,9 @@ Location ${absStart} - ${absEnd}`;
             for (let r = 3; r < obsWriteRow; r++) {
 
                const row = obs.getRow(r);
+
+               // Skip rows marked for exclusion from sheets
+               if (row._skipFromSheets) continue;
 
                const srCheck = row.getCell(2).value || "";
                const dateCheck = row.getCell(3).value || "";
@@ -1517,7 +1802,7 @@ Location ${absStart} - ${absEnd}`;
          const rawHeader = obs.getRow(rawStartRow);
 
          rawHeader.eachCell({ includeEmpty: true }, cell => {
-            cell.font = { bold: true, color: { argb: "000000" }, size: 12 };
+            cell.font = { bold: true, color: { argb: "FF000000" }, size: 12 };
             fill(cell, "00B0F0");
             cell.alignment = {
                horizontal: "center",
@@ -1599,14 +1884,12 @@ Location ${absStart} - ${absEnd}`;
             }
 
             if (sos && sos !== "No SOS") {
-               console.log(sos)
                fill(row.getCell(cSos), "FFFFBA00");
                fill(row.getCell(cTime), "FFFF0000");
                if (abs !== "0") fill(row.getCell(cAbs), "FFFF0000");
             }
 
             if (brake && brake !== "-") {
-               console.log(brake)
                fill(row.getCell(cBrake), "B7DEE8");
                fill(row.getCell(cTime), "FFFF0000");
                if (abs !== "0") fill(row.getCell(cAbs), "FFFF0000");

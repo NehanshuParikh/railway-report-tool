@@ -1,3 +1,4 @@
+
 async function uploadWRFaults(rows) {
 
     if (!rows || rows.length === 0) {

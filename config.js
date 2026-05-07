@@ -20,10 +20,10 @@ const REPORTS = {
   ebOverview: {
     name: "EB (OVERVIEW)",
     url: WEBAPP_URL
-  }, wrFaults: {
+  }, 
+  wrFaults: {
     name: "WR LOCO FAULTS",
     url: WR_WEBAPP_URL
   }
-
 
 };
