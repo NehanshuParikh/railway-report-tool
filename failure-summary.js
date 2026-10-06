@@ -5,6 +5,13 @@
     const text = value => String(value ?? '').trim();
     const escapeHTML = value => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
+    function normalizeDirection(value) {
+        const direction = text(value).toUpperCase();
+        if (direction === 'N' || direction === 'DN') return 'DN';
+        if (direction === 'R' || direction === 'UP') return 'UP';
+        return direction || 'Unknown';
+    }
+
     function readEvents(obs, endRow) {
         const events = [];
         for (let r = 3; r < endRow; r++) {
@@ -38,24 +45,26 @@
             const startValue = value => text(value).split(' - ')[0] || '—';
             const time = startValue(row.getCell(11).value);
             const location = startValue(row.getCell(12).value);
-            events.push({type, station, label, time, location, reason: '', included: true});
+            events.push({type, station, label, time, location, direction:normalizeDirection(row.getCell(5).value), reason: '', included: true});
         }
         return events;
     }
 
-    const includedEvents = state => state.events.filter(event => event.included !== false);
+    const visibleEvents = state => state.events.filter(event => !state.direction || state.direction === 'All' || normalizeDirection(event.direction) === state.direction);
+    const includedEvents = state => visibleEvents(state).filter(event => event.included !== false);
 
     function cells(state) {
         const events = includedEvents(state);
         const numbered = fn => events.map((event, i) => `${i + 1}. ${fn(event)}`).join('\n');
-        const intro = `In Train No ${state.trainNo || '—'} / Loco No ${state.locoNo || '—'},`;
+        const trainNo = state.trainNos?.[state.direction] ?? state.trainNo;
+        const intro = `In Train No ${trainNo || '—'} / Loco No ${state.locoNo || '—'}${state.direction && state.direction !== 'All' ? ` (${state.direction})` : ''},`;
         return [
             numbered(e => e.reason),
             numbered(e => e.type),
             numbered(e => e.station),
             intro + '\n\n' + (events.length ? numbered(e =>
                 `${e.label} at ${e.station} at Time - ${e.time} at Abs Location - ${e.location}. Due to ${e.reason}${e.reason ? '.' : ''}`
-            ) : (state.events.length ? 'No incidents selected.' : 'No incidents logged.'))
+            ) : (visibleEvents(state).length ? 'No incidents selected.' : 'No incidents logged.'))
         ];
     }
 
@@ -89,8 +98,8 @@
     }
 
     let current;
-    function prepare(wb, obs, endRow, trainNo, locoNo) {
-        current = {wb, trainNo, locoNo, events:readEvents(obs, endRow)};
+    function prepare(wb, obs, endRow, trainNo, locoNo, directions = []) {
+        current = {wb, trainNo, locoNo, events:readEvents(obs, endRow), direction:'All', trainNos:{All:trainNo}, directions:[...new Set(directions.map(normalizeDirection))]};
         writeWorksheet(wb, current);
         const button = document.getElementById('failureSummaryBtn');
         if (button) button.disabled = false;
@@ -106,12 +115,26 @@
         overlay.className = 'failure-summary-overlay';
         overlay.innerHTML = '<section class="failure-summary-dialog" role="dialog" aria-modal="true" aria-labelledby="failureSummaryTitle">' +
             '<h2 id="failureSummaryTitle">Failure Summary</h2><p>Check the incidents to include and enter their reasons. Drag across the cells below and press Ctrl+C (⌘C on Mac), or use Copy row. Paste into Excel to fill four cells.</p>' +
-            '<div class="summary-selection-actions"><button type="button" data-action="all">Select all</button><button type="button" data-action="none">Clear all</button><span class="summary-selection-count" aria-live="polite"></span></div><div class="summary-reasons"></div><div class="summary-scroll"><table class="summary-grid"><thead><tr>' + headers.map(h => '<th>' + h + '</th>').join('') +
+            '<div class="summary-direction-controls"><label>Direction <select aria-label="Summary direction"></select></label><label>Train No <input type="text" aria-label="Summary train number" placeholder="Train number for this direction"></label></div><div class="common-reasons-container"></div><div class="summary-selection-actions"><button type="button" data-action="all">Select all</button><button type="button" data-action="none">Clear all</button><span class="summary-selection-count" aria-live="polite"></span></div><div class="summary-reasons"></div><div class="summary-scroll"><table class="summary-grid"><thead><tr>' + headers.map(h => '<th>' + h + '</th>').join('') +
             '</tr></thead><tbody><tr>' + headers.map((h,i) => `<td tabindex="0" data-column="${i}" aria-label="${h}"></td>`).join('') +
             '</tr></tbody></table></div><div class="summary-actions"><button type="button" data-action="copy">Copy row</button><button type="button" data-action="download">Download updated Excel</button><button type="button" data-action="close">Close</button></div><p class="summary-status" role="status"></p></section>';
         document.body.appendChild(overlay);
         const status = overlay.querySelector('.summary-status');
         const reasons = overlay.querySelector('.summary-reasons');
+        const directionSelect = overlay.querySelector('[aria-label="Summary direction"]');
+        for (const direction of ['All', ...new Set([...state.directions, ...state.events.map(event => event.direction)])]) {
+            const option = document.createElement('option');option.value=direction;option.textContent=direction;directionSelect.appendChild(option);
+        }
+        directionSelect.value = state.direction;
+        const trainInput = overlay.querySelector('[aria-label="Summary train number"]');
+        trainInput.value = state.trainNos[state.direction] ?? state.trainNo;
+        directionSelect.addEventListener('change', () => {
+            state.direction=directionSelect.value;
+            trainInput.value=state.trainNos[state.direction] ?? state.trainNo;
+            render();
+        });
+        trainInput.addEventListener('input', () => {state.trainNos[state.direction]=trainInput.value.trim();render();});
+        CommonReasons.mount(overlay.querySelector('.common-reasons-container'));
         state.events.forEach((event, i) => {
             const entry = document.createElement('div');
             entry.className = 'summary-incident';
@@ -120,13 +143,14 @@
             checkbox.type = 'checkbox'; checkbox.checked = event.included !== false;
             checkbox.setAttribute('aria-label', `Include incident ${i + 1}`);
             const caption = document.createElement('span');
-            caption.textContent = `${i + 1}. ${event.type} (${event.station})`;
+            caption.textContent = `${i + 1}. ${event.type} (${event.station}) · ${event.direction}`;
             selectionLabel.append(checkbox, caption);
             const input = document.createElement('input');
             input.type = 'text'; input.value = event.reason; input.placeholder = 'Enter reason (optional)';
             input.setAttribute('aria-label', `Reason ${i + 1}`);
             checkbox.addEventListener('change', () => {event.included = checkbox.checked; render();});
             input.addEventListener('input', () => {event.reason = input.value.trim(); render();});
+            CommonReasons.attach(input, value => {event.reason=value;render();});
             entry.append(selectionLabel, input); reasons.appendChild(entry);
         });
         const gridCells = [...overlay.querySelectorAll('td')];
@@ -135,10 +159,20 @@
             gridCells.forEach((cell,i) => cell.classList.toggle('selected', i >= Math.min(first,last) && i <= Math.max(first,last)));
         }
         function render() {
-            overlay.querySelector('.summary-selection-count').textContent = `${includedEvents(state).length} of ${state.events.length} incidents selected`;
+            overlay.querySelector('.summary-selection-count').textContent = `${includedEvents(state).length} of ${visibleEvents(state).length} incidents selected`;
+            let visibleNumber=0;
             [...reasons.querySelectorAll('input[type="checkbox"]')].forEach((checkbox, i) => {
                 checkbox.checked = state.events[i].included !== false;
-                checkbox.closest('.summary-incident').classList.toggle('excluded', !checkbox.checked);
+                const entry=checkbox.closest('.summary-incident');
+                entry.hidden=state.direction !== 'All' && state.events[i].direction !== state.direction;
+                if (!entry.hidden) {
+                    visibleNumber++;
+                    const event=state.events[i];
+                    entry.querySelector('label span').textContent=`${visibleNumber}. ${event.type} (${event.station}) · ${event.direction}`;
+                    checkbox.setAttribute('aria-label', `Include incident ${visibleNumber}`);
+                    entry.querySelector('input[type="text"]').setAttribute('aria-label', `Reason ${visibleNumber}`);
+                }
+                entry.classList.toggle('excluded', !checkbox.checked);
             });
             status.textContent = '';
             cells(state).forEach((value,i) => {gridCells[i].textContent = value;});
@@ -146,7 +180,7 @@
         }
         for (const action of ['all', 'none']) {
             overlay.querySelector(`[data-action="${action}"]`).addEventListener('click', () => {
-                state.events.forEach(event => { event.included = action === 'all'; });
+                visibleEvents(state).forEach(event => { event.included = action === 'all'; });
                 render();
             });
         }
@@ -203,6 +237,6 @@
         overlay.addEventListener('keydown',event=>{if(event.key==='Escape'){event.stopPropagation();close();}});
         render();select();gridCells[0].focus();
     }
-    root.FailureSummary = {readEvents,cells,clipboardData,writeWorksheet,prepare,open};
+    root.FailureSummary = {normalizeDirection,readEvents,cells,clipboardData,writeWorksheet,prepare,open};
     if (typeof module !== 'undefined') module.exports = root.FailureSummary;
 })(typeof window !== 'undefined' ? window : globalThis);

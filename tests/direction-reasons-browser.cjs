@@ -1,0 +1,86 @@
+const {chromium}=require('playwright');
+const fs=require('fs');
+(async()=>{
+const browser=await chromium.launch({executablePath:process.env.CHROMIUM_PATH || '/usr/bin/chromium',headless:true,args:['--no-sandbox']});
+const page=await browser.newPage({acceptDownloads:true});
+page.on('dialog',async d=>{console.log('Dialog:',d.message());await d.dismiss()});
+const errors=[];page.on('pageerror',e=>{errors.push(e.message);console.log('Page error:',e.message)});
+if (process.env.RAILWAY_CDN_CACHE) {
+const path=require('node:path');
+await page.route('https://cdn.jsdelivr.net/npm/exceljs/dist/exceljs.min.js',r=>r.fulfill({path:path.join(process.env.RAILWAY_CDN_CACHE,'exceljs.js'),contentType:'application/javascript'}));
+await page.route('https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js',r=>r.fulfill({path:path.join(process.env.RAILWAY_CDN_CACHE,'xlsx.js'),contentType:'application/javascript'}));
+}
+await page.route('https://script.google.com/**',r=>r.abort());
+page.setDefaultTimeout(10000);
+await page.goto(process.env.RAILWAY_BASE_URL || 'http://127.0.0.1:8000');
+await page.waitForFunction(()=>typeof XLSX!=='undefined'&&typeof ExcelJS!=='undefined');
+const assert=require('node:assert/strict');
+const bytes=await page.evaluate(()=>{
+ const headers=['Date','LocoID','Direction','StationCode','TagID','Time','LocoAbsLocation','Mode','TagLinkInfo','BrakeStatus','EmergencyStatus','LocoSpecificSOSSentByStn','SignalOverride','StationId','TrainSpeed','CurrentSignal','CurrentSignalAspect','StationName'];
+ const row=(direction,station,time,mode,brake='-',tag='')=>['2026-10-07','39260',direction,station,388,time,475103,mode,tag,brake,'No Emergency','No SOS','',1,20,'S1','GREEN',station];
+ const rows=[headers,row('N','KANJ','06:00:00','FS'),row('N','KANJ','06:00:01','SR','EB','BOTH TAGS MISS'),row('N','KANJ','06:00:02','SR','EB','BOTH TAGS MISS'),row('R','GER','18:00:00','FS','EB','BOTH TAGS MISS'),row('R','GER','18:00:01','SR','EB','BOTH TAGS MISS'),row('R','GER','18:00:02','FS')];
+ const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows),'Input');return Array.from(new Uint8Array(XLSX.write(wb,{type:'array',bookType:'xlsx'})));
+});
+fs.writeFileSync('/tmp/railway-two-directions.xlsx',Buffer.from(bytes));
+async function generate(){
+ await page.locator('#trainNo').fill('20484');
+ await page.locator('#fileInput').setInputFiles({name:'two-directions.xlsx',mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',buffer:Buffer.from(bytes)});
+ const pending=page.waitForEvent('download');await page.getByRole('button',{name:'Generate Final Excel'}).click();const download=await pending;await page.locator('#failureSummaryPopup').waitFor();return download;
+}
+const download=await generate();await download.saveAs('/tmp/railway-directions-full.xlsx');
+assert.equal(await page.locator('.summary-incident').count(),6);
+const source=await page.evaluate(async bytes=>{
+ const wb=new ExcelJS.Workbook();await wb.xlsx.load(new Uint8Array(bytes));
+ return [3,4,5,6,7,8].map(r=>[wb.worksheets[1].getCell(r,5).value,wb.worksheets[1].getCell(r,10).value]);
+},Array.from(fs.readFileSync('/tmp/railway-directions-full.xlsx')));
+assert.deepEqual(source.map(row=>row[0]),['N','R','N','R','N','R']);
+assert.equal(source.filter(row=>row[1].startsWith('Brake')).length,2);
+const selector=page.getByRole('combobox',{name:'Summary direction'});
+await selector.selectOption('DN');assert.equal(await page.locator('.summary-incident:visible').count(),3);
+assert.ok(!(await page.locator('.summary-grid td').last().textContent()).includes('GER'));
+await page.getByRole('textbox',{name:'Reason 1',exact:true}).fill('Morning issue');
+await page.getByRole('button',{name:'Clear all',exact:true}).click();
+await selector.selectOption('UP');assert.equal(await page.locator('.summary-incident:visible input:checked').count(),3);
+await page.getByRole('textbox',{name:'Summary train number',exact:true}).fill('20483');
+await page.getByRole('textbox',{name:'New common reason',exact:true}).fill('Repeated BJD fault');
+await page.getByRole('button',{name:'Add reason',exact:true}).click();
+const added=page.locator('.common-reason-item').filter({hasText:'Repeated BJD fault'});
+const reasonBox=page.getByRole('textbox',{name:'Reason 1',exact:true});
+await page.locator('.common-reason-chip').filter({hasText:'Repeated BJD fault'}).dragTo(reasonBox);
+assert.equal(await reasonBox.inputValue(),'Repeated BJD fault');
+assert.match(await page.locator('.summary-grid td').last().textContent(),/Due to Repeated BJD fault/);
+await added.getByRole('button',{name:'Edit common reason 6',exact:true}).click();
+await page.getByRole('textbox',{name:'Edit reason text 6',exact:true}).fill('Edited BJD reason');
+await page.getByRole('button',{name:'Save',exact:true}).click();
+const edited=page.locator('.common-reason-item').filter({hasText:'Edited BJD reason'});
+await edited.getByRole('button',{name:'Use common reason 6',exact:true}).click();
+await page.getByRole('textbox',{name:'Reason 2',exact:true}).click();
+assert.equal(await page.getByRole('textbox',{name:'Reason 2',exact:true}).inputValue(),'Edited BJD reason');
+await selector.selectOption('DN');assert.equal(await page.locator('.summary-incident:visible input:checked').count(),0);
+assert.equal(await page.getByRole('textbox',{name:'Reason 1',exact:true}).inputValue(),'Morning issue');
+await page.getByRole('button',{name:'Select all',exact:true}).click();
+await selector.selectOption('UP');
+assert.equal(await page.getByRole('textbox',{name:'Summary train number',exact:true}).inputValue(),'20483');
+assert.equal(await page.getByRole('textbox',{name:'Reason 1',exact:true}).inputValue(),'Repeated BJD fault');
+const filtered=await page.locator('.summary-grid td').allTextContents();
+assert.match(filtered[3],/20483.*\(UP\)/);assert.ok(!filtered[3].includes('KANJ'));
+await page.context().grantPermissions(['clipboard-read','clipboard-write']);
+await page.getByRole('button',{name:'Copy row',exact:true}).click();
+await page.waitForFunction(()=>document.querySelector('.summary-status').textContent.includes('Four cells copied'));
+assert.ok(!(await page.evaluate(()=>navigator.clipboard.readText())).includes('KANJ'));
+const pending=page.waitForEvent('download');await page.getByRole('button',{name:'Download updated Excel'}).click();await (await pending).saveAs('/tmp/railway-directions-edited.xlsx');
+const exported=await page.evaluate(async bytes=>{const wb=new ExcelJS.Workbook();await wb.xlsx.load(new Uint8Array(bytes));return wb.getWorksheet('Failure Summary').getRow(2).values.slice(1);},Array.from(fs.readFileSync('/tmp/railway-directions-edited.xlsx')));
+assert.deepEqual(exported,filtered);
+await page.getByRole('button',{name:'Close',exact:true}).click();await page.getByRole('button',{name:'✕ Cancel'}).click();await page.getByRole('button',{name:'Failure Summary / Copy to Excel'}).click();
+assert.equal(await selector.inputValue(),'UP');
+await page.locator('.failure-summary-dialog').evaluate(el=>{el.scrollTop=0;});
+await page.screenshot({path:'/tmp/railway-directions-reasons.png',fullPage:true});
+await page.reload();await generate();
+assert.equal(await page.locator('.common-reason-chip').filter({hasText:'Edited BJD reason'}).count(),1);
+await page.locator('.common-reason-item').filter({hasText:'Edited BJD reason'}).getByRole('button',{name:'Delete common reason 6',exact:true}).click();
+await page.reload();await generate();
+assert.equal(await page.locator('.common-reason-chip').filter({hasText:'Edited BJD reason'}).count(),0);
+assert.deepEqual(errors,[]);
+console.log('PASS: mixed DN/UP detection boundaries; direction filtering and independent selections/reasons/train numbers; filtered clipboard and workbook; reason add/edit/delete and persistence; drag/drop and Use fallback.');
+await browser.close();
+})().then(()=>process.exit(0)).catch(e=>{console.error(e);process.exit(1)});

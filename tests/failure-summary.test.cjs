@@ -54,3 +54,15 @@ test('multi-mode incidents remain one concise numbered sentence',()=>{
  assert.equal(values[1],'1. FS - SR - OS');
  assert.equal(values[3],'In Train No 12345 / Loco No 37216,\n\n1. Mode Degrade FS - SR - OS at GER - KANJ at Time - 04:19:02 at Abs Location - 481904. Due to ');
 });
+test('direction filter keeps reasons and selections independent and limits export',()=>{
+ const records=[{5:'N',10:'Brake (KANJ) (EB)',11:'06:00',12:'100'},{5:'R',10:'Brake (GER) (EB)',11:'18:00',12:'200'}];
+ const events=summary.readEvents(observation(records),5);
+ assert.deepEqual(events.map(e=>e.direction),['DN','UP']);
+ events[0].reason='Morning issue';events[1].reason='Evening issue';
+ const state={events,trainNo:'20484',locoNo:'39260',direction:'DN',trainNos:{DN:'20484',UP:'20483'}};
+ assert.match(summary.cells(state)[3],/20484.*\(DN\)/);assert.ok(!summary.cells(state)[3].includes('GER'));
+ state.direction='UP';assert.match(summary.cells(state)[3],/20483.*\(UP\)/);assert.equal(summary.cells(state)[0],'1. Evening issue');
+ events[1].included=false;state.direction='DN';assert.equal(summary.cells(state)[0],'1. Morning issue');
+ state.direction='UP';assert.match(summary.cells(state)[3],/No incidents selected/);
+ assert.equal(summary.normalizeDirection('u'),'U');assert.equal(summary.normalizeDirection(''),'Unknown');
+});
