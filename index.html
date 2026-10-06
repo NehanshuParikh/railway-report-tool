@@ -4,10 +4,12 @@
 <head>
    <meta charset="UTF-8">
    <meta name="viewport" content="width=device-width,initial-scale=1.0">
-   <title>Railway Report LM - V4.0</title>
+   <title>Railway Report LM - V4.1</title>
 
    <script src="https://cdn.jsdelivr.net/npm/exceljs/dist/exceljs.min.js"></script>
    <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+
+   <link rel="stylesheet" href="failure-summary.css?v=concise-selection-3">
 
    <style>
       body {
@@ -87,13 +89,14 @@
 <body>
 
    <div class="card">
-      <h1>Railway Report V4.0 - LM</h1>
+      <h1>Railway Report V4.1 - LM</h1>
 
       <input type="file" id="fileInput" accept=".xlsx,.xls"><br>
       <input type="text" id="trainNo" placeholder="Optional Train No">
       <input type="text" id="trainName" placeholder="Optional Train Name"><br>
 
       <button onclick="runTool()">Generate Final Excel</button>
+      <button id="failureSummaryBtn" onclick="FailureSummary.open()" disabled>Failure Summary / Copy to Excel</button>
 
       <div class="log" id="log">System Ready.</div>
       <h3 style="margin-top:20px;">📌 Version History</h3>
@@ -114,6 +117,8 @@
 
          V3.0 - Correction of the Mode degradation issue (Incorrect detection due to ADI standby/isolation packets)
 
+         V4.1: Copy-ready failure summary with incident checkboxes, editable reasons, and concise descriptions.
+
          V4.0: Foreign tag detection, time gap detection for mode degradation, improved mode degradation description with mode sequence and time/abs location, added notes for skipped mode degradation events, overall code optimization and better logging.
       </div>
    </div>
@@ -122,6 +127,7 @@
    <script src="gsheet.js"></script>
    <script src="wr-sheet.js"></script>
    <script src="report-ui.js"></script>
+   <script src="failure-summary.js?v=concise-selection-3"></script>
 
 
    <script>
@@ -1908,6 +1914,8 @@ First Foreign TagID: ${firstTagId}`;
             DOWNLOAD
          =================================================== */
 
+         const failureSummary = FailureSummary.prepare(wb, obs, obsWriteRow, userTrainNo, locoId);
+
          const out = await wb.xlsx.writeBuffer();
 
          const blob = new Blob(
@@ -1928,7 +1936,9 @@ First Foreign TagID: ${firstTagId}`;
          a.download =
             `${safeDate}_${safeLoco}_${safeSection} -- ${finalTrainName}.xlsx`;
 
+         failureSummary.filename = a.download;
          a.click();
+         setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 
          log(`\n✓ Processing Complete!`);
          log(`✓ Downloaded: ${a.download}`);
@@ -1949,6 +1959,7 @@ First Foreign TagID: ${firstTagId}`;
             log(`======================`);
 
             openReportSelector(sheetRows, modeDegRows, tagMissRows, ebRows, wrRows);
+            FailureSummary.open();
 
             console.log("Train Issue Rows:", sheetRows);
             console.log("Mode Degradation Rows:", modeDegRows);
