@@ -14,6 +14,15 @@ await page.route('https://script.google.com/**',r=>r.abort());
 page.setDefaultTimeout(10000);
 await page.goto(process.env.RAILWAY_BASE_URL || 'http://127.0.0.1:8000');
 await page.waitForFunction(()=>typeof XLSX!=='undefined'&&typeof ExcelJS!=='undefined');
+const browserControls=await page.evaluate(()=>[
+ document.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true})),
+ document.dispatchEvent(new KeyboardEvent('keydown',{key:'F12',bubbles:true,cancelable:true})),
+ document.dispatchEvent(new KeyboardEvent('keydown',{key:'I',ctrlKey:true,shiftKey:true,bubbles:true,cancelable:true})),
+ document.dispatchEvent(new KeyboardEvent('keydown',{key:'C',ctrlKey:true,bubbles:true,cancelable:true})),
+ document.dispatchEvent(new KeyboardEvent('keydown',{key:'V',ctrlKey:true,bubbles:true,cancelable:true}))
+]);
+if(JSON.stringify(browserControls)!==JSON.stringify([false,false,false,true,true]))throw Error('Browser shortcut controls failed: '+JSON.stringify(browserControls));
+
 const bytes=await page.evaluate(()=>{
  const headers=['Date','LocoID','Direction','StationCode','TagID','Time','LocoAbsLocation','Mode','TagLinkInfo','BrakeStatus','EmergencyStatus','LocoSpecificSOSSentByStn','SignalOverride','StationId','TrainSpeed','CurrentSignal','CurrentSignalAspect','StationName'];
  const base=['2026-10-07','39260','N','KANJ',388,'22:23:01',475100,'FS','','-','No Emergency','No SOS','',1,20,'S1','GREEN','KANJ'];
