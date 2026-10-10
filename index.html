@@ -6,8 +6,8 @@
    <meta name="viewport" content="width=device-width,initial-scale=1.0">
    <title>Railway Report LM - V4.3</title>
    <script src="browser-controls.js?v=1"></script>
-   <link rel="stylesheet" href="frontend-login.css?v=1">
-   <script src="login-users.js?v=1"></script>
+   <link rel="stylesheet" href="frontend-login.css?v=2">
+   <script src="login-users.js?v=2"></script>
    <script src="frontend-login.js?v=1" defer></script>
 
    <script src="https://cdn.jsdelivr.net/npm/exceljs/dist/exceljs.min.js"></script>
@@ -93,6 +93,10 @@
 <body>
    <section id="loginScreen" class="card login-card" aria-labelledby="loginTitle">
       <h1 id="loginTitle">Railway Report Login</h1>
+      <aside class="efl-notice" aria-label="EFL access notice">
+         <strong>Attention — Authorized EFL personnel only</strong>
+         <p>This tool is officially part of EFL and is intended exclusively for authorized company personnel. Unauthorized access, copying of the source code, or reuse of this tool is prohibited and may result in legal action and, where applicable, disciplinary action.</p>
+      </aside>
       <p class="login-help">Enter your user ID and password. Each login gives you access for 6 hours.</p>
       <form id="loginForm">
          <label for="loginUser">User ID</label>
@@ -110,6 +114,10 @@
          <button id="sessionLogout" type="button">Log out</button>
       </div>
       <p id="sessionNotice" class="session-notice" role="status"></p>
+      <aside class="efl-notice efl-notice-compact" aria-label="EFL access notice">
+         <strong>EFL — Authorized company personnel only.</strong>
+         Unauthorized access, source-code copying, or reuse is prohibited and may result in legal action and, where applicable, disciplinary action.
+      </aside>
 
    <div class="card">
       <h1>Railway Report V4.3 - LM</h1>

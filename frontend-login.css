@@ -10,3 +10,7 @@
 .session-bar time { font-variant-numeric:tabular-nums; font-weight:bold; color:#38bdf8; }
 .session-bar button { margin-left:auto; }
 .session-notice { max-width:1000px; margin:0 auto 12px; }
+.efl-notice { padding:14px 16px; border:1px solid #fbbf24; border-left:5px solid #fbbf24; border-radius:8px; background:#302719; color:#fef3c7; font-size:14px; line-height:1.5; }
+.efl-notice strong { color:#fcd34d; }
+.efl-notice p { margin:8px 0 0; }
+.efl-notice-compact { box-sizing:border-box; max-width:1042px; margin:0 auto 16px; padding:10px 14px; font-size:13px; }

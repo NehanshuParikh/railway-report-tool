@@ -46,6 +46,6 @@ const {chromium}=require('playwright');const fs=require('node:fs');const path=re
   const restricted=await isolated.newPage();await restricted.goto(url);await require('./login-helper.cjs').loginForTests(restricted);
   assert.match(await restricted.locator('#sessionNotice').textContent(),/storage is unavailable/);
   await restricted.reload();await restricted.locator('#loginScreen').waitFor({state:'visible'});await isolated.close();
-  console.log('PASS: all five users, incorrect credentials, six-hour countdown, refresh without extension, cross-tab logout, expiry cleanup, re-login, invalid-session recovery.');
+  console.log('PASS: all seven users, incorrect credentials, six-hour countdown, refresh without extension, cross-tab logout, expiry cleanup, re-login, invalid-session recovery.');
  }finally{await browser.close();}
 })().catch(error=>{console.error(error);process.exit(1)});

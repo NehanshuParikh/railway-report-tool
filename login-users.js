@@ -30,6 +30,18 @@
         "salt": "753272fa7aba740df2be14a6e4c61383",
         "hash": "30bbde5aeb8388fb125c9f3352cb94c2c91fd408b75c878c86fd77ec54aee7be",
         "iterations": 210000
+    },
+    {
+        "username": "NMSKavachRoom",
+        "salt": "cb81fbc2990031c4c50f3dcabef8ea3c",
+        "hash": "af3a6b64f30f39a93fdd7d0be5d4e2bca707f01d6f985a7dbfe3ce9bd97a4def",
+        "iterations": 210000
+    },
+    {
+        "username": "NMSTestroom",
+        "salt": "580ecc9ac8b8b2d91fe49790508c2cd5",
+        "hash": "e575fef57f9661df4a8a0d12d1d8862f6ae8fc708d5d3a5556549e8f71f3387a",
+        "iterations": 210000
     }
 ];
     root.LoginUsers = users;
