@@ -1,0 +1,12 @@
+[hidden] { display:none !important; }
+.login-card { max-width:440px; margin:8vh auto; }
+.login-card label { display:block; margin-top:16px; font-weight:bold; }
+.login-card input { box-sizing:border-box; width:100%; margin:8px 0; background:#f8fafc; color:#0f172a; }
+.login-card button { width:100%; margin:16px 0 0; }
+.login-card input:focus-visible,.login-card button:focus-visible { outline:3px solid #38bdf8; outline-offset:2px; }
+.login-message { min-height:24px; color:#fbbf24; }
+.login-help { font-size:14px; color:#cbd5e1; }
+.session-bar { display:flex; flex-wrap:wrap; align-items:center; gap:14px; max-width:1000px; margin:0 auto 16px; padding:8px 20px; border:1px solid #334155; border-radius:12px; background:#1e293b; }
+.session-bar time { font-variant-numeric:tabular-nums; font-weight:bold; color:#38bdf8; }
+.session-bar button { margin-left:auto; }
+.session-notice { max-width:1000px; margin:0 auto 12px; }

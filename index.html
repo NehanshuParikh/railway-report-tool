@@ -4,8 +4,11 @@
 <head>
    <meta charset="UTF-8">
    <meta name="viewport" content="width=device-width,initial-scale=1.0">
-   <title>Railway Report LM - V4.2</title>
+   <title>Railway Report LM - V4.3</title>
    <script src="browser-controls.js?v=1"></script>
+   <link rel="stylesheet" href="frontend-login.css?v=1">
+   <script src="login-users.js?v=1"></script>
+   <script src="frontend-login.js?v=1" defer></script>
 
    <script src="https://cdn.jsdelivr.net/npm/exceljs/dist/exceljs.min.js"></script>
    <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
@@ -88,9 +91,28 @@
 </head>
 
 <body>
+   <section id="loginScreen" class="card login-card" aria-labelledby="loginTitle">
+      <h1 id="loginTitle">Railway Report Login</h1>
+      <p class="login-help">Enter your user ID and password. Each login gives you access for 6 hours.</p>
+      <form id="loginForm">
+         <label for="loginUser">User ID</label>
+         <input id="loginUser" type="text" autocomplete="username" autocapitalize="none" required>
+         <label for="loginPassword">Password</label>
+         <input id="loginPassword" type="password" autocomplete="current-password" required>
+         <button id="loginSubmit" type="submit">Log in</button>
+         <p id="loginMessage" class="login-message" role="status" aria-live="polite"></p>
+      </form>
+   </section>
+   <main id="reportApp" hidden>
+      <div class="session-bar">
+         <span>Logged in as <strong id="sessionUser"></strong></span>
+         <span>Session ends in <time id="sessionCountdown" aria-label="Session time remaining">06:00:00</time></span>
+         <button id="sessionLogout" type="button">Log out</button>
+      </div>
+      <p id="sessionNotice" class="session-notice" role="status"></p>
 
    <div class="card">
-      <h1>Railway Report V4.2 - LM</h1>
+      <h1>Railway Report V4.3 - LM</h1>
 
       <input type="file" id="fileInput" accept=".xlsx,.xls"><br>
       <input type="text" id="trainNo" placeholder="Optional Train No">
@@ -118,6 +140,8 @@
 
          V3.0 - Correction of the Mode degradation issue (Incorrect detection due to ADI standby/isolation packets)
 
+         V4.3: Frontend login with fixed user credentials and a 6-hour session countdown.
+
          V4.2: Direction-wise failure summaries and reusable common reasons with drag-and-drop and list editing.
 
          V4.1: Copy-ready failure summary with incident checkboxes, editable reasons, and concise descriptions.
@@ -125,6 +149,8 @@
          V4.0: Foreign tag detection, time gap detection for mode degradation, improved mode degradation description with mode sequence and time/abs location, added notes for skipped mode degradation events, overall code optimization and better logging.
       </div>
    </div>
+
+   </main>
 
    <script src="config.js"></script>
    <script src="gsheet.js"></script>
@@ -149,6 +175,7 @@
       }
 
       async function runTool() {
+         if (!FrontendLogin.requireSession()) return;
 
          const file = document.getElementById("fileInput").files[0];
          if (!file) { alert("Upload file first"); return; }
@@ -1938,6 +1965,7 @@ First Foreign TagID: ${firstTagId}`;
          const failureSummary = FailureSummary.prepare(wb, obs, obsWriteRow, userTrainNo, locoId, src.slice(1).map(row => row[dirCol]));
 
          const out = await wb.xlsx.writeBuffer();
+         if (!FrontendLogin.requireSession()) return;
 
          const blob = new Blob(
             [out],

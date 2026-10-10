@@ -1,4 +1,5 @@
 async function uploadRows(url, rows, reportType) {
+  if (window.FrontendLogin && !FrontendLogin.requireSession()) return false;
   try {
     const res = await fetch(url,{
       method:"POST",

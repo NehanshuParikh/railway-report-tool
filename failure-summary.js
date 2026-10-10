@@ -107,6 +107,7 @@
     }
 
     function open() {
+        if (root.FrontendLogin && !root.FrontendLogin.requireSession()) return;
         if (!current) return;
         document.getElementById('failureSummaryPopup')?.remove();
         const state = current;
@@ -225,6 +226,7 @@
             try {
                 writeWorksheet(state.wb,state);
                 const bytes=await state.wb.xlsx.writeBuffer();
+                if (root.FrontendLogin && !root.FrontendLogin.requireSession()) return;
                 const url=URL.createObjectURL(new Blob([bytes],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));
                 const link=document.createElement('a');link.href=url;link.download=state.filename || 'Railway_Report.xlsx';link.click();
                 setTimeout(()=>URL.revokeObjectURL(url),1000);
@@ -237,6 +239,6 @@
         overlay.addEventListener('keydown',event=>{if(event.key==='Escape'){event.stopPropagation();close();}});
         render();select();gridCells[0].focus();
     }
-    root.FailureSummary = {normalizeDirection,readEvents,cells,clipboardData,writeWorksheet,prepare,open};
+    root.FailureSummary = {normalizeDirection,readEvents,cells,clipboardData,writeWorksheet,prepare,open,reset:()=>{current=null;}};
     if (typeof module !== 'undefined') module.exports = root.FailureSummary;
 })(typeof window !== 'undefined' ? window : globalThis);

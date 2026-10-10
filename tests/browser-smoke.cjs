@@ -14,6 +14,7 @@ await page.route('https://script.google.com/**',r=>r.abort());
 page.setDefaultTimeout(10000);
 await page.goto(process.env.RAILWAY_BASE_URL || 'http://127.0.0.1:8000');
 await page.waitForFunction(()=>typeof XLSX!=='undefined'&&typeof ExcelJS!=='undefined');
+await require('./login-helper.cjs').loginForTests(page);
 const browserControls=await page.evaluate(()=>[
  document.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true})),
  document.dispatchEvent(new KeyboardEvent('keydown',{key:'F12',bubbles:true,cancelable:true})),

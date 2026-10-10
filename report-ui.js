@@ -133,6 +133,7 @@ function closePopup() {
 
 
 async function submitReports() {
+  if (window.FrontendLogin && !FrontendLogin.requireSession()) return false;
 
     const btn = document.getElementById("updateBtn");
 

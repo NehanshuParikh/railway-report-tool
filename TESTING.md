@@ -38,3 +38,15 @@ The Direction dropdown filters the visible incidents, copied row, and Failure Su
 Common reasons can be added, edited, and deleted. Drag a reason chip into an incident reason box to apply it; alternatively click Use and then the target box. Your library is stored in this browser's local storage, not GitHub or Google Sheets. Deleting/editing a library item does not change reasons already applied to incidents. If storage is unavailable, library edits last for this page session.
 
 Run `node --test tests/*.test.cjs` and `RAILWAY_CDN_CACHE=/workspace/railway-onboarding node tests/direction-reasons-browser.cjs` for the new checks.
+
+## Frontend login (V4.3)
+
+Five fixed accounts are configured: Vohra, Parikh, Panchal, Navik, and Shrivastav. The generated credential sheet is stored outside the repository and must be shared privately. The app stores salted PBKDF2 password verifiers; plaintext passwords must never be committed. This is a frontend convenience gate, not server-side authentication: client code and browser storage can be modified to bypass it.
+
+Successful login starts a six-hour absolute session. Refresh preserves the original expiry. The countdown locks the app at expiry; waking a background tab rechecks the current time. Logout propagates across tabs and clears the active report/file selection. If browser storage is unavailable, login works in memory and refreshing requires login again. Fixed passwords do not rotate daily.
+
+Set `LOGIN_TEST_CREDENTIALS` to a private JSON file containing an array of `{"username":"UserID","password":"their password"}` records before running the browser suites. Never add that file to Git. Example cloud test command:
+
+`LOGIN_TEST_CREDENTIALS=/workspace/railway-login-credentials.json RAILWAY_CDN_CACHE=/workspace/railway-onboarding RAILWAY_BASE_URL=http://127.0.0.1:8002 node tests/frontend-login-browser.cjs`
+
+The existing browser suites use the same environment variable. The login suite checks all five accounts, incorrect credentials, refresh, six-hour expiry, session cleanup, cross-tab logout, re-login, and storage-unavailable behavior.

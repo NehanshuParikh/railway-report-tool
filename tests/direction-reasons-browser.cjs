@@ -14,6 +14,7 @@ await page.route('https://script.google.com/**',r=>r.abort());
 page.setDefaultTimeout(10000);
 await page.goto(process.env.RAILWAY_BASE_URL || 'http://127.0.0.1:8000');
 await page.waitForFunction(()=>typeof XLSX!=='undefined'&&typeof ExcelJS!=='undefined');
+await require('./login-helper.cjs').loginForTests(page);
 const assert=require('node:assert/strict');
 const bytes=await page.evaluate(()=>{
  const headers=['Date','LocoID','Direction','StationCode','TagID','Time','LocoAbsLocation','Mode','TagLinkInfo','BrakeStatus','EmergencyStatus','LocoSpecificSOSSentByStn','SignalOverride','StationId','TrainSpeed','CurrentSignal','CurrentSignalAspect','StationName'];

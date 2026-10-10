@@ -1,5 +1,6 @@
 
 async function uploadWRFaults(rows) {
+  if (window.FrontendLogin && !FrontendLogin.requireSession()) return false;
 
     if (!rows || rows.length === 0) {
         log("⚠ WR LOCO FAULTS: Skipped (No Entries)");
